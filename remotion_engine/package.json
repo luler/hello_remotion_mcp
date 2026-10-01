@@ -1,0 +1,26 @@
+{
+  "name": "remotion-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "remotion render"
+  },
+  "dependencies": {
+    "@remotion/bundler": "^4.0.230",
+    "@remotion/cli": "^4.0.230",
+    "@remotion/renderer": "^4.0.230",
+    "@remotion/transitions": "^4.0.230",
+    "esbuild": "^0.24.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.230"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5.3.3"
+  }
+}

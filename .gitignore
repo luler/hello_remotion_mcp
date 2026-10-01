@@ -1,0 +1,16 @@
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+*$py.class
+node_modules/
+remotion_engine/node_modules/
+remotion_engine/.remotion/
+remotion_engine/*.mp4
+remotion_engine/*.jpg
+remotion_engine/temp_props_*.json
+data/output/*
+!data/output/.gitkeep
+data/store/*
+!data/store/.gitkeep
+.env

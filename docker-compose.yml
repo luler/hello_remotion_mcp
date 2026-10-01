@@ -1,0 +1,35 @@
+services:
+  remotion-studio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: remotion-studio:latest
+    container_name: remotion-studio
+    restart: unless-stopped
+    ports:
+      - "${PORT:-48001}:48001"
+    environment:
+      - PORT=48001
+      - BASE_URL=${BASE_URL:-}
+      - AUTH_KEY=${AUTH_KEY:-}
+      - REMOTION_WORKSPACE=/app/data
+      - REMOTION_OUTPUT_DIR=/app/data/output
+      - REMOTION_STORE_DIR=/app/data/store
+      - REMOTION_ENGINE_DIR=/app/remotion_engine
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    volumes:
+      - ./data:/app/data
+      - ./app.py:/app/app.py
+      - ./mcp_server.py:/app/mcp_server.py
+      - ./web_admin.py:/app/web_admin.py
+      - ./config.py:/app/config.py
+      - ./store.py:/app/store.py
+      - ./themes.py:/app/themes.py
+      - ./rules.py:/app/rules.py
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:48001/healthz || exit 1" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

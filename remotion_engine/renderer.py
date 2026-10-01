@@ -1,0 +1,292 @@
+# -*- coding: utf-8 -*-
+"""Remotion 渲染执行器：支持 Spec 声明式渲染与 React 源码渲染，自动生成视频与高清封面图。"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+ENGINE_DIR = Path(__file__).resolve().parent
+SRC_INDEX = ENGINE_DIR / "src" / "index.ts"
+USER_SRC_DIR = ENGINE_DIR / "src" / "user"
+
+
+def get_npx_cmd() -> str:
+    """自适应操作系统平台返回 npx 执行路径。"""
+    if sys.platform == "win32":
+        cmd = shutil.which("npx.cmd") or shutil.which("npx") or "npx.cmd"
+    else:
+        cmd = shutil.which("npx") or "npx"
+    return cmd
+
+
+def get_ffmpeg_cmd() -> str:
+    """自适应操作系统平台返回 ffmpeg 执行路径。"""
+    if sys.platform == "win32":
+        cmd = shutil.which("ffmpeg.exe") or shutil.which("ffmpeg") or "ffmpeg"
+    else:
+        cmd = shutil.which("ffmpeg") or "ffmpeg"
+    return cmd
+
+
+def extract_poster(video_path: str, poster_path: str, time_offset: float = 1.0) -> bool:
+    """使用 ffmpeg 极速截取视频的一帧作为高清封面图。"""
+    if not os.path.exists(video_path):
+        return False
+    ffmpeg = get_ffmpeg_cmd()
+    cmd = [
+        ffmpeg,
+        "-y",
+        "-ss",
+        str(max(0.2, time_offset)),
+        "-i",
+        video_path,
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+        poster_path,
+    ]
+    try:
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        return res.returncode == 0 and os.path.exists(poster_path) and os.path.getsize(poster_path) > 0
+    except Exception as e:
+        logger.warning(f"Failed to extract poster with ffmpeg: {e}")
+        return False
+
+
+async def render_spec_to_video(
+    spec: dict[str, Any],
+    item_id: str,
+    output_dir: str,
+    timeout: int = 300,
+) -> dict[str, Any]:
+    """依据声明式 JSON Spec 渲染 MP4 视频。"""
+    os.makedirs(output_dir, exist_ok=True)
+    out_video = os.path.join(output_dir, f"{item_id}.mp4")
+    out_poster = os.path.join(output_dir, f"{item_id}.jpg")
+
+    # 计算预估尺寸与帧数
+    fps = int(spec.get("fps") or 30)
+    platform = str(spec.get("platform") or "youtube").lower()
+    width = 1920
+    height = 1080
+    if platform in ("tiktok", "portrait", "shorts"):
+        width, height = 1080, 1920
+    elif platform in ("square", "instagram_square"):
+        width, height = 1080, 1080
+    if spec.get("width"):
+        width = int(spec["width"])
+    if spec.get("height"):
+        height = int(spec["height"])
+
+    scenes = spec.get("scenes") or []
+    total_frames = 0
+    if scenes:
+        for s in scenes:
+            dur = s.get("durationInFrames") or round((float(s.get("duration") or 3.5)) * fps)
+            total_frames += int(dur)
+    else:
+        total_frames = 150
+
+    total_frames = max(total_frames, 30)
+    duration_seconds = round(total_frames / fps, 2)
+
+    # 写入 props 临时文件
+    props_data = {"spec": spec}
+    temp_props_path = ENGINE_DIR / f"temp_props_{item_id}.json"
+    with open(temp_props_path, "w", encoding="utf-8") as f:
+        json.dump(props_data, f, ensure_ascii=False)
+
+    npx = get_npx_cmd()
+    gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
+    cmd = [
+        npx,
+        "remotion",
+        "render",
+        str(SRC_INDEX),
+        "SpecVideo",
+        out_video,
+        f"--props={str(temp_props_path)}",
+        gl_flag,
+    ]
+
+    # 若环境变量中指定了 Chromium 路径（例如 Docker 容器环境 /usr/bin/chromium）
+    chromium_path = os.environ.get("PUPPETEER_EXECUTABLE_PATH")
+    if chromium_path and os.path.exists(chromium_path):
+        cmd.append(f"--browser-executable={chromium_path}")
+
+    start_time = time.time()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(ENGINE_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        elapsed = round(time.time() - start_time, 2)
+
+        if proc.returncode != 0:
+            err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+            logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
+            return {
+                "success": False,
+                "error": f"Remotion render failed: {err_msg}",
+            }
+
+        # 提取封面图
+        extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
+
+        file_size = os.path.getsize(out_video) if os.path.exists(out_video) else 0
+
+        return {
+            "success": True,
+            "item_id": item_id,
+            "output_path": out_video,
+            "poster_path": out_poster if os.path.exists(out_poster) else "",
+            "duration_seconds": duration_seconds,
+            "duration_frames": total_frames,
+            "fps": fps,
+            "width": width,
+            "height": height,
+            "file_size_bytes": file_size,
+            "file_size_mb": round(file_size / (1024 * 1024), 2),
+            "render_time_seconds": elapsed,
+        }
+    except asyncio.TimeoutError:
+        return {"success": False, "error": f"Render timed out after {timeout} seconds"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        if os.path.exists(temp_props_path):
+            try:
+                os.remove(temp_props_path)
+            except OSError:
+                pass
+
+
+async def render_code_to_video(
+    files: dict[str, str],
+    item_id: str,
+    output_dir: str,
+    entry_file: str = "/src/Video.tsx",
+    title: str = "Custom Video",
+    duration_in_frames: int = 150,
+    fps: int = 30,
+    width: int = 1920,
+    height: int = 1080,
+    input_props: dict[str, Any] | None = None,
+    timeout: int = 300,
+) -> dict[str, Any]:
+    """依据用户提供的 React / Remotion 源码多文件字典渲染 MP4 视频。"""
+    os.makedirs(output_dir, exist_ok=True)
+    out_video = os.path.join(output_dir, f"{item_id}.mp4")
+    out_poster = os.path.join(output_dir, f"{item_id}.jpg")
+
+    USER_SRC_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 规范化并写入用户代码文件到 src/user 目录下
+    for rel_path, code in files.items():
+        clean_path = rel_path.lstrip("/\\")
+        if clean_path.startswith("src/"):
+            clean_path = clean_path[4:]
+        if clean_path.startswith("user/"):
+            clean_path = clean_path[5:]
+        target_file = USER_SRC_DIR / clean_path
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(target_file, "w", encoding="utf-8") as f:
+            f.write(code)
+
+    duration_in_frames = max(int(duration_in_frames), 30)
+    fps = max(int(fps), 1)
+    duration_seconds = round(duration_in_frames / fps, 2)
+
+    props_data = {
+        "inputProps": {
+            **(input_props or {}),
+            "title": title,
+            "durationInFrames": duration_in_frames,
+            "fps": fps,
+            "width": width,
+            "height": height,
+        }
+    }
+    temp_props_path = ENGINE_DIR / f"temp_props_{item_id}.json"
+    with open(temp_props_path, "w", encoding="utf-8") as f:
+        json.dump(props_data, f, ensure_ascii=False)
+
+    npx = get_npx_cmd()
+    gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
+    cmd = [
+        npx,
+        "remotion",
+        "render",
+        str(SRC_INDEX),
+        "CodeVideo",
+        out_video,
+        f"--props={str(temp_props_path)}",
+        f"--frames=0-{duration_in_frames - 1}",
+        gl_flag,
+    ]
+
+    chromium_path = os.environ.get("PUPPETEER_EXECUTABLE_PATH")
+    if chromium_path and os.path.exists(chromium_path):
+        cmd.append(f"--browser-executable={chromium_path}")
+
+    start_time = time.time()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(ENGINE_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        elapsed = round(time.time() - start_time, 2)
+
+        if proc.returncode != 0:
+            err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+            logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
+            return {
+                "success": False,
+                "error": f"Remotion render failed: {err_msg}",
+            }
+
+        extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
+
+        file_size = os.path.getsize(out_video) if os.path.exists(out_video) else 0
+
+        return {
+            "success": True,
+            "item_id": item_id,
+            "output_path": out_video,
+            "poster_path": out_poster if os.path.exists(out_poster) else "",
+            "duration_seconds": duration_seconds,
+            "duration_frames": duration_in_frames,
+            "fps": fps,
+            "width": width,
+            "height": height,
+            "file_size_bytes": file_size,
+            "file_size_mb": round(file_size / (1024 * 1024), 2),
+            "render_time_seconds": elapsed,
+        }
+    except asyncio.TimeoutError:
+        return {"success": False, "error": f"Render timed out after {timeout} seconds"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        if os.path.exists(temp_props_path):
+            try:
+                os.remove(temp_props_path)
+            except OSError:
+                pass

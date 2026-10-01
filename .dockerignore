@@ -1,0 +1,15 @@
+.git
+.idea
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+remotion_engine/node_modules
+remotion_engine/.remotion
+remotion_engine/*.mp4
+remotion_engine/*.jpg
+data/output/*
+!data/output/.gitkeep
+data/store/*
+!data/store/.gitkeep
