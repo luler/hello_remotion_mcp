@@ -695,27 +695,20 @@ def get_admin_html() -> str:
   <!-- 操作与批量控制工具栏 -->
   <div class="action-toolbar" id="actionToolbar">
     <div class="toolbar-group">
-      <label class="select-all-label" title="勾选或取消全选本页所有视频">
-        <input type="checkbox" id="masterCheckbox" onchange="toggleMasterSelect(this.checked)" />
-        <span id="masterCheckboxLabel">全选本页</span>
-      </label>
-      <button class="btn btn-secondary btn-sm" onclick="selectAllCurrentPage()" title="勾选当前页显示的所有视频">
-        ☑️ 全选本页
+      <button class="btn btn-secondary btn-sm" onclick="selectAll()" title="勾选所有视频">
+        ☑️ 全选
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="selectAllOverall()" title="跨页勾选所有匹配的视频进行批量删除">
-        🌐 全选所有 (<span id="btnSelectAllTotal">0</span>)
-      </button>
-      <button class="btn btn-secondary btn-sm" onclick="deselectAll()" title="取消所有已选中的视频">
+      <button class="btn btn-secondary btn-sm" onclick="deselectAll()" title="取消已勾选的所有视频">
         ⬜ 取消全选
       </button>
       <div class="selection-badge" id="selectionBadge">
-        已勾选 <span id="selectedCount" style="color:#fff; font-weight:700;">0</span> 部视频
+        已选择 <span id="selectedCount" style="color:#fff; font-weight:700;">0</span> 部视频
       </div>
+      <button class="btn btn-danger btn-sm" id="batchDeleteBtn" style="display:none;" onclick="batchDeleteSelected()">
+        🗑️ 批量删除 (<span id="batchDeleteCount">0</span>)
+      </button>
     </div>
     <div class="toolbar-group">
-      <button class="btn btn-danger btn-sm" id="batchDeleteBtn" style="display:none;" onclick="batchDeleteSelected()">
-        🗑️ 彻底批量删除 (<span id="batchDeleteCount">0</span>)
-      </button>
       <div class="page-size-selector">
         <span>每页显示:</span>
         <select class="page-size-select" id="pageSizeSelect" onchange="changePageSize(Number(this.value))">
@@ -865,7 +858,6 @@ def get_admin_html() -> str:
 
         document.getElementById("statCount").innerText = totalItems;
         document.getElementById("statSize").innerText = (data.total_disk_bytes / (1024 * 1024)).toFixed(1) + " MB";
-        document.getElementById("btnSelectAllTotal").innerText = totalItems;
 
         renderGrid(currentFiles);
         renderPagination();
@@ -958,50 +950,19 @@ def get_admin_html() -> str:
       if (card) card.classList.toggle("selected", checked);
     }
 
-    function toggleMasterSelect(checked) {
-      if (checked) {
-        selectAllCurrentPage();
-      } else {
-        currentFiles.forEach(f => selectedIds.delete(f.id));
-        updateSelectionUI();
-        renderGrid(currentFiles);
-      }
-    }
-
-    function selectAllCurrentPage() {
+    function selectAll() {
       if (!currentFiles || currentFiles.length === 0) return;
       currentFiles.forEach(f => selectedIds.add(f.id));
       updateSelectionUI();
       renderGrid(currentFiles);
-      showToast(`已勾选当前页 ${currentFiles.length} 部视频`);
-    }
-
-    async function selectAllOverall() {
-      const key = getAuthKey();
-      const headers = key ? { "Authorization": `Bearer ${key}` } : {};
-      try {
-        const q = encodeURIComponent(searchQuery);
-        const res = await fetch(`/api/admin/ids?search=${q}`, { headers });
-        if (res.status === 401) {
-          openAuthModal();
-          return;
-        }
-        const data = await res.json();
-        const ids = data.ids || [];
-        ids.forEach(id => selectedIds.add(id));
-        updateSelectionUI();
-        renderGrid(currentFiles);
-        showToast(`已全选所有 ${ids.length} 部视频`);
-      } catch (e) {
-        console.error("获取视频 ID 列表失败", e);
-      }
+      showToast(`已全选 ${currentFiles.length} 部视频`);
     }
 
     function deselectAll() {
       selectedIds.clear();
       updateSelectionUI();
       renderGrid(currentFiles);
-      showToast("已取消所有勾选");
+      showToast("已取消全选");
     }
 
     function updateSelectionUI() {
@@ -1010,27 +971,16 @@ def get_admin_html() -> str:
       const countEl = document.getElementById("selectedCount");
       const delBtn = document.getElementById("batchDeleteBtn");
       const delCount = document.getElementById("batchDeleteCount");
-      const master = document.getElementById("masterCheckbox");
 
-      countEl.innerText = count;
-      delCount.innerText = count;
+      if (countEl) countEl.innerText = count;
+      if (delCount) delCount.innerText = count;
 
       if (count > 0) {
-        badge.style.display = "inline-flex";
-        delBtn.style.display = "inline-flex";
+        if (badge) badge.style.display = "inline-flex";
+        if (delBtn) delBtn.style.display = "inline-flex";
       } else {
-        badge.style.display = "none";
-        delBtn.style.display = "none";
-      }
-
-      if (currentFiles.length > 0) {
-        const allPageSelected = currentFiles.every(f => selectedIds.has(f.id));
-        const somePageSelected = currentFiles.some(f => selectedIds.has(f.id));
-        master.checked = allPageSelected;
-        master.indeterminate = !allPageSelected && somePageSelected;
-      } else {
-        master.checked = false;
-        master.indeterminate = false;
+        if (badge) badge.style.display = "none";
+        if (delBtn) delBtn.style.display = "none";
       }
     }
 
