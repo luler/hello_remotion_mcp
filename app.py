@@ -417,13 +417,17 @@ def api_get_poster(item_id: str):
             raw_id = raw_id[:-len(suffix)]
             break
 
+    media_headers = {
+        "Cache-Control": "public, max-age=86400",
+    }
+
     rec = M.STORE.get(raw_id)
     if rec and rec.get("poster_path") and os.path.exists(rec["poster_path"]):
-        return FileResponse(rec["poster_path"], media_type="image/jpeg")
+        return FileResponse(rec["poster_path"], media_type="image/jpeg", headers=media_headers)
 
     cand = os.path.join(M.OUTPUT_DIR, f"{raw_id}.jpg")
     if os.path.exists(cand):
-        return FileResponse(cand, media_type="image/jpeg")
+        return FileResponse(cand, media_type="image/jpeg", headers=media_headers)
 
     raise HTTPException(status_code=404, detail="Poster not found")
 

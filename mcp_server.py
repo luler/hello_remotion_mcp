@@ -175,7 +175,8 @@ async def create_video_from_spec(
     base = get_base_url()
     video_url = f"{base}/api/video/{item_id}.mp4"
     download_url = f"{base}/api/download/{item_id}.mp4"
-    poster_url = f"{base}/api/poster/{item_id}.jpg" if render_res.get("poster_path") else ""
+    now_ts = int(time.time())
+    poster_url = f"{base}/api/poster/{item_id}.jpg?t={now_ts}" if render_res.get("poster_path") else ""
     theme_name = spec.get("theme", "tech")
 
     poster_md = f"![{title} 封面预览]({poster_url})\n\n" if poster_url else ""
@@ -288,7 +289,8 @@ async def create_video_from_code(
     base = get_base_url()
     video_url = f"{base}/api/video/{item_id}.mp4"
     download_url = f"{base}/api/download/{item_id}.mp4"
-    poster_url = f"{base}/api/poster/{item_id}.jpg" if render_res.get("poster_path") else ""
+    now_ts = int(time.time())
+    poster_url = f"{base}/api/poster/{item_id}.jpg?t={now_ts}" if render_res.get("poster_path") else ""
 
     poster_md = f"![{title} 封面预览]({poster_url})\n\n" if poster_url else ""
     markdown = (
