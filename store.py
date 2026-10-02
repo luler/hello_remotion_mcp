@@ -64,6 +64,7 @@ class VideoStore:
         fps: int = 30,
         width: int = 1920,
         height: int = 1080,
+        render_time_seconds: float = 0.0,
     ) -> dict[str, Any]:
         path = os.path.abspath(path)
         bytes_size = os.path.getsize(path) if os.path.exists(path) else 0
@@ -82,6 +83,7 @@ class VideoStore:
             "fps": fps,
             "width": width,
             "height": height,
+            "render_time_seconds": round(render_time_seconds, 2),
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "created_at_ts": time.time(),
             "spec": spec,

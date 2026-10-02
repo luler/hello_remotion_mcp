@@ -168,6 +168,7 @@ async def create_video_from_spec(
         fps=render_res["fps"],
         width=render_res["width"],
         height=render_res["height"],
+        render_time_seconds=render_res.get("render_time_seconds", 0.0),
     )
 
     base = get_base_url()
@@ -184,6 +185,7 @@ async def create_video_from_spec(
         f"- 📺 **在线播放视频**：[{title}]({video_url})\n"
         f"- 📥 **下载高清 MP4**：[点击下载视频文件]({download_url})\n"
         f"- ⏱️ **规格参数**：{render_res['duration_seconds']} 秒 | {render_res['width']}x{render_res['height']} | {render_res['fps']} FPS | {render_res['file_size_mb']} MB\n"
+        f"- ⏳ **渲染总耗时**：{render_res.get('render_time_seconds', 0.0)} 秒\n"
         f"- 🎨 **制作模式**：声明式 Spec 模式 (主题: `{theme_name}`)\n"
     )
 
@@ -280,6 +282,7 @@ async def create_video_from_code(
         fps=render_res["fps"],
         width=render_res["width"],
         height=render_res["height"],
+        render_time_seconds=render_res.get("render_time_seconds", 0.0),
     )
 
     base = get_base_url()
@@ -295,6 +298,7 @@ async def create_video_from_code(
         f"- 📺 **在线播放视频**：[{title}]({video_url})\n"
         f"- 📥 **下载高清 MP4**：[点击下载视频文件]({download_url})\n"
         f"- ⏱️ **规格参数**：{render_res['duration_seconds']} 秒 | {render_res['width']}x{render_res['height']} | {render_res['fps']} FPS | {render_res['file_size_mb']} MB\n"
+        f"- ⏳ **渲染总耗时**：{render_res.get('render_time_seconds', 0.0)} 秒\n"
         f"- 💻 **制作模式**：自由式 React 源码模式 ({len(file_map)} 个文件)\n"
     )
 
@@ -431,6 +435,7 @@ async def get_video_info(video_id: str) -> str:
         "fps": rec.get("fps", 30),
         "resolution": f"{rec.get('width', 1920)}x{rec.get('height', 1080)}",
         "size_mb": round(rec.get("bytes", 0) / (1024 * 1024), 2),
+        "render_time_seconds": rec.get("render_time_seconds", 0.0),
         "created_at": rec.get("created_at", ""),
     }, ensure_ascii=False, indent=2)
 

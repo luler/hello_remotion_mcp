@@ -238,6 +238,7 @@ def api_admin_files(
             "fps": it.get("fps", 30),
             "resolution": f"{it.get('width', 1920)}x{it.get('height', 1080)}",
             "size_mb": round(b / (1024 * 1024), 2),
+            "render_time_seconds": it.get("render_time_seconds", 0.0),
             "created_at": it.get("created_at", ""),
             "spec": it.get("spec"),
             "files": it.get("files"),
@@ -462,6 +463,7 @@ async def api_render_spec(payload: RenderSpecIn):
         fps=res["fps"],
         width=res["width"],
         height=res["height"],
+        render_time_seconds=res.get("render_time_seconds", 0.0),
     )
 
     base = M.get_base_url()
@@ -475,6 +477,7 @@ async def api_render_spec(payload: RenderSpecIn):
         "duration_seconds": res["duration_seconds"],
         "resolution": f"{res['width']}x{res['height']}",
         "file_size_mb": res["file_size_mb"],
+        "render_time_seconds": res.get("render_time_seconds", 0.0),
     }
 
 
@@ -512,6 +515,7 @@ async def api_render_code(payload: RenderCodeIn):
         fps=res["fps"],
         width=res["width"],
         height=res["height"],
+        render_time_seconds=res.get("render_time_seconds", 0.0),
     )
 
     base = M.get_base_url()
@@ -525,6 +529,7 @@ async def api_render_code(payload: RenderCodeIn):
         "duration_seconds": res["duration_seconds"],
         "resolution": f"{res['width']}x{res['height']}",
         "file_size_mb": res["file_size_mb"],
+        "render_time_seconds": res.get("render_time_seconds", 0.0),
     }
 
 

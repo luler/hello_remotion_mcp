@@ -1044,6 +1044,7 @@ def get_admin_html() -> str:
               <span class="badge badge-mode">${item.mode === 'spec' ? 'Spec 模式' : 'React 源码'}</span>
               <span class="badge">${item.duration_seconds || 0}s</span>
               <span class="badge">${item.resolution || '1080p'}</span>
+              ${item.render_time_seconds ? `<span class="badge" title="渲染总耗时">⏳ ${item.render_time_seconds}s</span>` : ''}
             </div>
           </div>
           <div class="card-body">
@@ -1052,6 +1053,7 @@ def get_admin_html() -> str:
               <div class="card-meta">
                 <span>🕒 ${escapeHtml(item.created_at || '')}</span>
                 <span>💾 ${item.size_mb || 0} MB</span>
+                ${item.render_time_seconds ? `<span>⏳ 耗时 ${item.render_time_seconds}s</span>` : ''}
               </div>
             </div>
             <div class="card-actions">
@@ -1227,6 +1229,7 @@ def get_admin_html() -> str:
         <p><strong>帧率:</strong> ${item.fps || 30} FPS</p>
         <p><strong>分辨率:</strong> ${item.resolution || '1920x1080'}</p>
         <p><strong>文件大小:</strong> ${item.size_mb || 0} MB</p>
+        <p><strong>渲染总耗时:</strong> ${item.render_time_seconds ? item.render_time_seconds + ' 秒' : '未知'}</p>
         <p><strong>生成时间:</strong> ${item.created_at || ''}</p>
       `;
 
