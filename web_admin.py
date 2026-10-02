@@ -685,6 +685,21 @@ def get_admin_html() -> str:
       }
     }
 
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function handlePosterError(img) {
+      img.onerror = null;
+      img.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 320 180'><rect width='320' height='180' fill='%23111827'/><text x='50%' y='50%' fill='%2394a3b8' font-size='16' text-anchor='middle' dominant-baseline='middle'>🎬 视频封面</text></svg>";
+    }
+
     function renderGrid(files) {
       const grid = document.getElementById("videoGrid");
       const empty = document.getElementById("emptyState");
@@ -703,13 +718,15 @@ def get_admin_html() -> str:
         const posterSrc = item.poster_url || "/api/poster/" + item.id + ".jpg";
         const videoSrc = item.video_url || "/api/video/" + item.id + ".mp4";
         const isChecked = selectedIds.has(item.id);
+        const safeTitle = escapeHtml(item.title || item.id);
+        const safeId = escapeHtml(item.id);
 
         card.innerHTML = `
           <div class="card-checkbox-wrap">
-            <input type="checkbox" class="card-checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSelect('${item.id}', this.checked)" />
+            <input type="checkbox" class="card-checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSelect('${safeId}', this.checked)" />
           </div>
-          <div class="card-preview" onclick="openPlayerModal('${item.id}')">
-            <img class="card-img" src="${posterSrc}" alt="${item.title}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'320\\' height=\\'180\\' viewBox=\\'0 0 320 180\\'><rect width=\\'320\\' height=\\'180\\' fill=\\'%23111827\\'/><text x=\\'50%\\' y=\\'50%\\' fill=\\'%2394a3b8\\' font-size=\\'16\\' text-anchor=\\'middle\\' dominant-baseline=\\'middle\\'>🎬 视频封面</text></svg>'"/>
+          <div class="card-preview" onclick="openPlayerModal('${safeId}')">
+            <img class="card-img" src="${posterSrc}" alt="${safeTitle}" onerror="handlePosterError(this)"/>
             <div class="play-overlay">
               <div class="play-circle">▶</div>
             </div>
@@ -721,17 +738,17 @@ def get_admin_html() -> str:
           </div>
           <div class="card-body">
             <div>
-              <div class="card-title" title="${item.title}">${item.title || item.id}</div>
+              <div class="card-title" title="${safeTitle}">${safeTitle}</div>
               <div class="card-meta">
-                <span>🕒 ${item.created_at || ''}</span>
+                <span>🕒 ${escapeHtml(item.created_at || '')}</span>
                 <span>💾 ${item.size_mb || 0} MB</span>
               </div>
             </div>
             <div class="card-actions">
-              <button class="btn btn-secondary btn-sm" onclick="openPlayerModal('${item.id}')">▶ 播放</button>
+              <button class="btn btn-secondary btn-sm" onclick="openPlayerModal('${safeId}')">▶ 播放</button>
               <button class="btn btn-secondary btn-sm" onclick="copyLink('${videoSrc}')">🔗 链接</button>
-              <a class="btn btn-primary btn-sm" href="/api/download/${item.id}.mp4" download>📥 下载</a>
-              <button class="btn btn-danger btn-sm" style="flex:0.5;" onclick="deleteSingle('${item.id}')">🗑️</button>
+              <a class="btn btn-primary btn-sm" href="/api/download/${safeId}.mp4" download>📥 下载</a>
+              <button class="btn btn-danger btn-sm" style="flex:0.5;" onclick="deleteSingle('${safeId}')">🗑️</button>
             </div>
           </div>
         `;
@@ -813,7 +830,7 @@ def get_admin_html() -> str:
       if (item.spec) {
         codeViewer.innerText = JSON.stringify(item.spec, null, 2);
       } else if (item.files) {
-        codeViewer.innerText = Object.entries(item.files).map(([k, v]) => `// === ${k} ===\n${v}`).join("\n\n");
+        codeViewer.innerText = Object.entries(item.files).map(([k, v]) => `// === ${k} ===\n${v}`).join(String.fromCharCode(10, 10));
       } else {
         codeViewer.innerText = "// 无源码或 Spec 记录";
       }
@@ -919,8 +936,13 @@ def get_admin_html() -> str:
       }
     });
 
-    // 初始化加载
+    // 初始化加载与前台 4 秒自动增量同步
     loadFiles();
+    setInterval(() => {
+      if (!document.hidden && !currentModalItem) {
+        loadFiles();
+      }
+    }, 4000);
   </script>
 </body>
 </html>
