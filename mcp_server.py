@@ -406,92 +406,71 @@ async def get_themes_and_templates() -> str:
 
 
 @server.tool()
-async def list_videos(limit: int = 20) -> str:
-    """获取当前已生成的视频列表（按生成时间倒序）。"""
-    items, total = STORE.list(limit=limit)
-    base = get_base_url()
-    results = []
-    for it in items:
-        vid = it["id"]
-        results.append({
-            "id": vid,
-            "title": it.get("title", ""),
-            "mode": it.get("mode", ""),
-            "video_url": f"{base}/api/video/{vid}.mp4",
-            "download_url": f"{base}/api/download/{vid}.mp4",
-            "poster_url": f"{base}/api/poster/{vid}.jpg" if it.get("poster_path") else "",
-            "duration_seconds": it.get("duration_seconds", 0),
-            "resolution": f"{it.get('width', 1920)}x{it.get('height', 1080)}",
-            "fps": it.get("fps", 30),
-            "size_mb": round(it.get("bytes", 0) / (1024 * 1024), 2),
-            "created_at": it.get("created_at", ""),
-        })
-    return json.dumps({"total": total, "videos": results}, ensure_ascii=False, indent=2)
+async def get_video_info(video_id: str) -> str:
+    """根据视频唯一 ID 获取特定视频的播放与下载信息（仅支持根据明确 ID 精准查询，杜绝遍历与历史资产泄漏）。
 
+    Args:
+        video_id: 当前对话或任务中已生成的视频 ID (如 vid_spec_... 或 vid_code_...)
+    """
+    if not video_id:
+        return json.dumps({"ok": False, "error": "video_id is required"}, ensure_ascii=False)
 
-@server.tool()
-async def delete_video(video_id: str) -> str:
-    """删除指定的视频资产及其封面图文件。"""
     rec = STORE.get(video_id)
     if not rec:
-        return json.dumps({"ok": False, "error": f"Video not found: {video_id}"})
+        return json.dumps({"ok": False, "error": f"Video not found: {video_id}"}, ensure_ascii=False)
 
-    # 删除实体文件
-    if rec.get("path") and os.path.exists(rec["path"]):
-        try:
-            os.remove(rec["path"])
-        except OSError:
-            pass
-
-    if rec.get("poster_path") and os.path.exists(rec["poster_path"]):
-        try:
-            os.remove(rec["poster_path"])
-        except OSError:
-            pass
-
-    STORE.delete(rec["id"])
-    return json.dumps({"ok": True, "deleted_id": video_id})
+    base = get_base_url()
+    return json.dumps({
+        "ok": True,
+        "id": rec["id"],
+        "title": rec.get("title", ""),
+        "mode": rec.get("mode", ""),
+        "video_url": f"{base}/api/video/{rec['id']}.mp4",
+        "download_url": f"{base}/api/download/{rec['id']}.mp4",
+        "poster_url": f"{base}/api/poster/{rec['id']}.jpg" if rec.get("poster_path") else "",
+        "duration_seconds": rec.get("duration_seconds", 0),
+        "duration_frames": rec.get("duration_frames", 0),
+        "fps": rec.get("fps", 30),
+        "resolution": f"{rec.get('width', 1920)}x{rec.get('height', 1080)}",
+        "size_mb": round(rec.get("bytes", 0) / (1024 * 1024), 2),
+        "created_at": rec.get("created_at", ""),
+    }, ensure_ascii=False, indent=2)
 
 
 # ==================== Remotion 规则与编码指南工具 ====================
 
 @server.tool()
-async def rule_react_code() -> str:
-    """获取 Remotion 多文件 React 项目结构与代码规范。"""
-    return rules.RULE_REACT_CODE
+async def get_coding_rules(topic: str = "all") -> str:
+    """获取 Remotion 动效编写核心规范与代码指南。
 
+    Args:
+        topic: 规则主题，可选值:
+               - "all": 获取全部核心规范总览
+               - "react": React 多文件项目结构与代码规范
+               - "animations": useCurrentFrame 纯数学帧映射核心原理
+               - "timing": spring 弹簧阻尼与 interpolate 缓动时序设计
+               - "sequencing": Sequence 分幕编排与局部时间轴设计
+               - "transitions": Fade, Slide, Wipe 等平滑转场指南
+               - "text": 打字机字效与流光字效
+               - "trimming": 素材前后端裁剪技巧
+    """
+    topic = (topic or "").strip().lower()
+    topic_map = {
+        "react": rules.RULE_REACT_CODE,
+        "animations": rules.RULE_REMOTION_ANIMATIONS,
+        "timing": rules.RULE_REMOTION_TIMING,
+        "sequencing": rules.RULE_REMOTION_SEQUENCING,
+        "transitions": rules.RULE_REMOTION_TRANSITIONS,
+        "text": rules.RULE_REMOTION_TEXT_ANIMATIONS,
+        "trimming": rules.RULE_REMOTION_TRIMMING,
+    }
+    if topic in topic_map:
+        return topic_map[topic]
 
-@server.tool()
-async def rule_remotion_animations() -> str:
-    """获取 useCurrentFrame 与基于纯数学帧映射的动画核心原理。"""
-    return rules.RULE_REMOTION_ANIMATIONS
-
-
-@server.tool()
-async def rule_remotion_timing() -> str:
-    """获取 interpolate, spring 物理弹簧阻尼与缓动时序控制指南。"""
-    return rules.RULE_REMOTION_TIMING
-
-
-@server.tool()
-async def rule_remotion_sequencing() -> str:
-    """获取 Sequence 多场景分幕、嵌套与局部时间轴编排指南。"""
-    return rules.RULE_REMOTION_SEQUENCING
-
-
-@server.tool()
-async def rule_remotion_transitions() -> str:
-    """获取 Fade, Slide, Wipe 等平滑转场动画指南。"""
-    return rules.RULE_REMOTION_TRANSITIONS
-
-
-@server.tool()
-async def rule_remotion_text_animations() -> str:
-    """获取打字机字效、高亮滚动动效等文字动画实现规范。"""
-    return rules.RULE_REMOTION_TEXT_ANIMATIONS
-
-
-@server.tool()
-async def rule_remotion_trimming() -> str:
-    """获取利用 Sequence 负偏移实现素材前后端裁剪的规范。"""
-    return rules.RULE_REMOTION_TRIMMING
+    return "\n\n---\n\n".join([
+        rules.RULE_INDEX,
+        rules.RULE_REACT_CODE,
+        rules.RULE_REMOTION_ANIMATIONS,
+        rules.RULE_REMOTION_TIMING,
+        rules.RULE_REMOTION_SEQUENCING,
+    ])

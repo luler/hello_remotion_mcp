@@ -828,9 +828,6 @@ def get_admin_html() -> str:
       <button class="btn btn-secondary btn-sm" onclick="deselectAll()" title="取消已勾选的所有视频">
         ⬜ 取消全选
       </button>
-      <div class="selection-badge" id="selectionBadge">
-        已选择 <span id="selectedCount" style="color:#fff; font-weight:700;">0</span> 部视频
-      </div>
       <button class="btn btn-danger btn-sm" id="batchDeleteBtn" style="display:none;" onclick="batchDeleteSelected()">
         🗑️ 批量删除 (<span id="batchDeleteCount">0</span>)
       </button>
@@ -1094,19 +1091,14 @@ def get_admin_html() -> str:
 
     function updateSelectionUI() {
       const count = selectedIds.size;
-      const badge = document.getElementById("selectionBadge");
-      const countEl = document.getElementById("selectedCount");
       const delBtn = document.getElementById("batchDeleteBtn");
       const delCount = document.getElementById("batchDeleteCount");
 
-      if (countEl) countEl.innerText = count;
       if (delCount) delCount.innerText = count;
 
       if (count > 0) {
-        if (badge) badge.style.display = "inline-flex";
         if (delBtn) delBtn.style.display = "inline-flex";
       } else {
-        if (badge) badge.style.display = "none";
         if (delBtn) delBtn.style.display = "none";
       }
     }
