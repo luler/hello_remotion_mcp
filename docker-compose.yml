@@ -1,44 +1,69 @@
 services:
   remotion-studio:
+    # 构建配置：基于当前目录下的 Dockerfile 构建镜像（内置 Node.js 20、Chromium、FFmpeg 与中文字体）
     build:
       context: .
       dockerfile: Dockerfile
     image: remotion-studio:latest
     container_name: remotion-studio
     restart: unless-stopped
+
+    # =========================================================================
+    # 【核心性能参数】共享内存大小 (Shared Memory)
+    # Chromium 无头浏览器在光栅化 1080p/4K 视频帧时高度依赖 /dev/shm。
+    # Docker 默认仅分配 64MB，在多光栅线程或高分辨率下极易导致 Chromium 崩溃。
+    # 强烈建议保持 2gb（若宿主机内存紧张，最低不建议低于 1gb）。
+    # =========================================================================
     shm_size: '2gb'
+
+    # 端口映射：宿主机端口:容器内端口（可通过 .env 文件中的 PORT 变量覆盖，默认 48001）
     ports:
       - "${PORT:-48001}:48001"
+
     environment:
-      - PORT=48001
-      - BASE_URL=${BASE_URL:-}
-      - AUTH_KEY=${AUTH_KEY:-}
-      - REMOTION_WORKSPACE=/app/data
-      - REMOTION_OUTPUT_DIR=/app/data/output
-      - REMOTION_STORE_DIR=/app/data/store
-      - REMOTION_ENGINE_DIR=/app/remotion_engine
-      - REMOTION_PUBLIC_DIR=/app/remotion_engine/public
-      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-120}
-      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%}
-      - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2}
-      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+      # ----------------- 1. 网络与基础配置 -----------------
+      - PORT=48001                                      # 容器内服务监听端口（固定 48001）
+      - BASE_URL=${BASE_URL:-}                          # 外部访问基础 URL（如 https://video.domain.com，留空则自动根据请求头动态识别）
+      - AUTH_KEY=${AUTH_KEY:-}                          # 访问安全密钥（留空免密放行；非空时 /mcp 与 /admin 后台均需凭证访问）
+
+      # ----------------- 2. 渲染性能与超时控制 -----------------
+      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-120}           # 单个视频渲染最大超时秒数（默认 120 秒，长视频可调为 300）
+      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%} # Remotion 内部并发渲染标签数（默认 50% CPU 核心，也可填具体数字如 4、8）
+      - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2} # 异步信号量最大并发渲染任务数（防止多客户端并发把 CPU/内存打满）
+
+      # ----------------- 3. 存储与引擎路径配置 -----------------
+      - REMOTION_WORKSPACE=/app/data                    # 数据根目录
+      - REMOTION_OUTPUT_DIR=/app/data/output            # MP4 视频与 JPG 封面图输出目录
+      - REMOTION_STORE_DIR=/app/data/store              # 视频资产元数据索引库目录
+      - REMOTION_ENGINE_DIR=/app/remotion_engine        # Remotion 前端渲染引擎工作目录
+      - REMOTION_PUBLIC_DIR=/app/remotion_engine/public # 静态公共资源目录（存放背景音乐、图片、字体等）
+
+      # ----------------- 4. 浏览器运行环境配置 -----------------
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true           # 跳过 npm 自动下载 Chromium，使用系统预装包
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium     # 容器内预装的 Chromium 可执行路径
+
     volumes:
-      - ./data:/app/data
-      - ./data/public:/app/remotion_engine/public
-      - ./app.py:/app/app.py
-      - ./mcp_server.py:/app/mcp_server.py
-      - ./web_admin.py:/app/web_admin.py
-      - ./config.py:/app/config.py
-      - ./store.py:/app/store.py
-      - ./themes.py:/app/themes.py
-      - ./rules.py:/app/rules.py
-      - ./remotion_engine/src:/app/remotion_engine/src
-      - ./remotion_engine/renderer.py:/app/remotion_engine/renderer.py
-      - ./remotion_engine/remotion.config.ts:/app/remotion_engine/remotion.config.ts
+      # ----------------- 核心数据持久化挂载 -----------------
+      - ./data:/app/data                                # 持久化保存已生成的视频文件、封面海报和元数据
+      - ./data/public:/app/remotion_engine/public       # 外部公共资源目录（放置用户自定义背景音乐 MP3、Logo 图片等）
+
+      # ----------------- 源码热更新挂载（修改宿主机文件即时生效，无需重构镜像） -----------------
+      - ./app.py:/app/app.py                            # FastAPI 入口与路由
+      - ./mcp_server.py:/app/mcp_server.py              # MCP 工具与服务协议实现
+      - ./web_admin.py:/app/web_admin.py                # 单页视频资产管理后台 (SPA)
+      - ./config.py:/app/config.py                      # 全局环境变量与配置解析
+      - ./store.py:/app/store.py                        # 本地轻量持久化数据存储模块
+      - ./themes.py:/app/themes.py                      # 8 大主题色彩、平台画幅与模板 Spec
+      - ./rules.py:/app/rules.py                        # Remotion 动画规范指南与提示词知识库
+      - ./remotion_engine/src:/app/remotion_engine/src  # Remotion 动效组件库与声明式场景
+      - ./remotion_engine/renderer.py:/app/remotion_engine/renderer.py # 渲染执行器子进程调度
+      - ./remotion_engine/remotion.config.ts:/app/remotion_engine/remotion.config.ts # Remotion 核心编译配置
+
+    # 容器健康检查探针：每 30 秒探测一次服务连通性
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:48001/healthz || exit 1" ]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+
