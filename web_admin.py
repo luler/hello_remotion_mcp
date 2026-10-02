@@ -195,24 +195,139 @@ def get_admin_html() -> str:
       font-weight: 700;
     }
 
-    /* 批量操作浮条 */
-    .batch-bar {
+    /* 顶部操作与批量管理工具栏 */
+    .action-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      padding: 0.85rem 1.75rem;
+      background: #1e293b;
+      border-bottom: 1px solid var(--border);
       position: sticky;
       top: 56px;
       z-index: 35;
-      background: #1e293b;
-      border-bottom: 1px solid var(--border-focus);
-      padding: 0.65rem 1.75rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      flex-wrap: wrap;
+    }
+    .select-all-label {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+      padding: 0.35rem 0.65rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all 0.2s ease;
+    }
+    .select-all-label:hover {
+      border-color: var(--border-focus);
+      background: var(--surface-hover);
+    }
+    .select-all-label input[type="checkbox"] {
+      width: 17px;
+      height: 17px;
+      accent-color: var(--primary-light);
+      cursor: pointer;
+    }
+    .selection-badge {
+      font-size: 0.82rem;
+      color: var(--primary-light);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 0.32rem 0.75rem;
+      border-radius: 9999px;
+      font-weight: 600;
       display: none;
       align-items: center;
-      justify-content: space-between;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      animation: slideDown 0.25s ease-out;
+      gap: 0.3rem;
     }
-    .batch-bar.active { display: flex; }
-    @keyframes slideDown {
-      from { transform: translateY(-100%); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
+    .page-size-selector {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+    .page-size-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.3rem 0.6rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      outline: none;
+      cursor: pointer;
+    }
+    .page-size-select:focus {
+      border-color: var(--border-focus);
+    }
+
+    /* 分页导航控制条 */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+      margin-top: 2rem;
+      padding: 1.25rem 0;
+      border-top: 1px solid var(--border);
+    }
+    .pagination-info {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .pagination-info strong {
+      color: var(--text);
+    }
+    .pagination-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .page-btn {
+      min-width: 34px;
+      height: 34px;
+      padding: 0 0.55rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.82rem;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .page-btn:hover:not(:disabled) {
+      border-color: var(--primary-light);
+      color: var(--primary-light);
+      background: var(--surface-hover);
+    }
+    .page-btn.active {
+      background: var(--primary);
+      border-color: var(--primary-light);
+      color: #fff;
+      font-weight: 700;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
+    }
+    .page-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
     }
 
     /* 主体容器 */
@@ -246,6 +361,11 @@ def get_admin_html() -> str:
       transform: translateY(-4px);
       border-color: var(--border-focus);
       box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.2);
+    }
+    .video-card.selected {
+      border-color: var(--primary-light);
+      background: rgba(56, 189, 248, 0.05);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4), 0 12px 30px rgba(0, 0, 0, 0.5);
     }
 
     /* 封面预览区域 */
@@ -572,14 +692,39 @@ def get_admin_html() -> str:
     <div class="stat-pill">⚡ 渲染引擎：<span class="stat-val">Remotion 4.x + Chromium</span></div>
   </div>
 
-  <!-- 批量操作栏 -->
-  <div class="batch-bar" id="batchBar">
-    <div style="display:flex; align-items:center; gap: 1rem;">
-      <span style="font-weight: 700; color: #fff;">已选择 <span id="selectedCount" style="color:var(--primary-light)">0</span> 个视频</span>
-      <button class="btn btn-secondary btn-sm" onclick="selectAll(false)">取消全选</button>
+  <!-- 操作与批量控制工具栏 -->
+  <div class="action-toolbar" id="actionToolbar">
+    <div class="toolbar-group">
+      <label class="select-all-label" title="勾选或取消全选本页所有视频">
+        <input type="checkbox" id="masterCheckbox" onchange="toggleMasterSelect(this.checked)" />
+        <span id="masterCheckboxLabel">全选本页</span>
+      </label>
+      <button class="btn btn-secondary btn-sm" onclick="selectAllCurrentPage()" title="勾选当前页显示的所有视频">
+        ☑️ 全选本页
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="selectAllOverall()" title="跨页勾选所有匹配的视频进行批量删除">
+        🌐 全选所有 (<span id="btnSelectAllTotal">0</span>)
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="deselectAll()" title="取消所有已选中的视频">
+        ⬜ 取消全选
+      </button>
+      <div class="selection-badge" id="selectionBadge">
+        已勾选 <span id="selectedCount" style="color:#fff; font-weight:700;">0</span> 部视频
+      </div>
     </div>
-    <div style="display:flex; gap: 0.75rem;">
-      <button class="btn btn-danger btn-sm" onclick="batchDeleteSelected()">🗑️ 彻底批量删除</button>
+    <div class="toolbar-group">
+      <button class="btn btn-danger btn-sm" id="batchDeleteBtn" style="display:none;" onclick="batchDeleteSelected()">
+        🗑️ 彻底批量删除 (<span id="batchDeleteCount">0</span>)
+      </button>
+      <div class="page-size-selector">
+        <span>每页显示:</span>
+        <select class="page-size-select" id="pageSizeSelect" onchange="changePageSize(Number(this.value))">
+          <option value="12" selected>12 部</option>
+          <option value="24">24 部</option>
+          <option value="48">48 部</option>
+          <option value="0">全部</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -590,6 +735,20 @@ def get_admin_html() -> str:
       <div class="empty-icon">🎬</div>
       <h3>暂无已渲染视频</h3>
       <p style="margin-top:0.5rem; font-size:0.85rem;">请通过 MCP 客户端（Cherry Studio / Claude）调用 <code>create_video_from_spec</code> 或 <code>create_video_from_code</code> 生成视频。</p>
+    </div>
+
+    <!-- 分页导航控制条 -->
+    <div class="pagination-bar" id="paginationBar" style="display:none;">
+      <div class="pagination-info" id="paginationInfo">
+        共 <strong id="pgTotal">0</strong> 部视频 · 第 <strong id="pgCurrent">1</strong> / <strong id="pgTotalPages">1</strong> 页
+      </div>
+      <div class="pagination-nav">
+        <button class="page-btn" id="btnFirst" onclick="goToPage(1)" title="第一页">⏮</button>
+        <button class="page-btn" id="btnPrev" onclick="goToPage(currentPage - 1)" title="上一页">◀</button>
+        <div id="pageNumberButtons" style="display:flex; gap:0.35rem;"></div>
+        <button class="page-btn" id="btnNext" onclick="goToPage(currentPage + 1)" title="下一页">▶</button>
+        <button class="page-btn" id="btnLast" onclick="goToPage(totalPages)" title="最后一页">⏭</button>
+      </div>
     </div>
   </main>
 
@@ -655,7 +814,13 @@ def get_admin_html() -> str:
   <div class="toast-box" id="toastBox"></div>
 
   <script>
-    let allFiles = [];
+    let currentFiles = [];
+    let currentPage = 1;
+    let pageSize = 12;
+    let totalPages = 1;
+    let totalItems = 0;
+    let searchQuery = "";
+    let searchTimer = null;
     let currentModalItem = null;
     let selectedIds = new Set();
 
@@ -681,17 +846,32 @@ def get_admin_html() -> str:
       const key = getAuthKey();
       const headers = key ? { "Authorization": `Bearer ${key}` } : {};
       try {
-        const res = await fetch("/api/admin/files", { headers });
+        const q = encodeURIComponent(searchQuery);
+        const url = `/api/admin/files?page=${currentPage}&page_size=${pageSize}&search=${q}`;
+        const res = await fetch(url, { headers });
         if (res.status === 401) {
           openAuthModal();
           return;
         }
         const data = await res.json();
-        allFiles = data.files || [];
-        document.getElementById("statCount").innerText = allFiles.length;
+        currentFiles = data.files || [];
+        totalItems = data.total || 0;
+        totalPages = data.total_pages || 1;
+
+        if (currentPage > totalPages && totalPages >= 1) {
+          currentPage = totalPages;
+          return loadFiles(isManual);
+        }
+
+        document.getElementById("statCount").innerText = totalItems;
         document.getElementById("statSize").innerText = (data.total_disk_bytes / (1024 * 1024)).toFixed(1) + " MB";
-        renderGrid(allFiles);
-        if (isManual) showToast("已刷新列表");
+        document.getElementById("btnSelectAllTotal").innerText = totalItems;
+
+        renderGrid(currentFiles);
+        renderPagination();
+        updateSelectionUI();
+
+        if (isManual) showToast("已刷新视频列表");
       } catch (e) {
         console.error("加载文件列表失败", e);
       }
@@ -725,16 +905,18 @@ def get_admin_html() -> str:
 
       files.forEach(item => {
         const card = document.createElement("div");
-        card.className = "video-card";
+        const safeId = escapeHtml(item.id);
+        const safeTitle = escapeHtml(item.title || item.id);
+        const isChecked = selectedIds.has(item.id);
+
+        card.className = "video-card" + (isChecked ? " selected" : "");
+        card.id = "card-" + safeId;
 
         const posterSrc = item.poster_url || "/api/poster/" + item.id + ".jpg";
         const videoSrc = item.video_url || "/api/video/" + item.id + ".mp4";
-        const isChecked = selectedIds.has(item.id);
-        const safeTitle = escapeHtml(item.title || item.id);
-        const safeId = escapeHtml(item.id);
 
         card.innerHTML = `
-          <div class="card-checkbox-wrap">
+          <div class="card-checkbox-wrap" onclick="event.stopPropagation()">
             <input type="checkbox" class="card-checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSelect('${safeId}', this.checked)" />
           </div>
           <div class="card-preview" onclick="openPlayerModal('${safeId}')">
@@ -760,7 +942,7 @@ def get_admin_html() -> str:
               <button class="btn btn-secondary btn-sm" onclick="openPlayerModal('${safeId}')">▶ 播放</button>
               <button class="btn btn-secondary btn-sm" onclick="copyLink('${videoSrc}')">🔗 链接</button>
               <a class="btn btn-primary btn-sm" href="/api/download/${safeId}.mp4" download>📥 下载</a>
-              <button class="btn btn-danger btn-sm" style="flex:0.5;" onclick="deleteSingle('${safeId}')">🗑️</button>
+              <button class="btn btn-danger btn-sm" style="flex:0.5;" onclick="deleteSingle('${safeId}')" title="彻底删除此视频">🗑️</button>
             </div>
           </div>
         `;
@@ -771,33 +953,91 @@ def get_admin_html() -> str:
     function toggleSelect(id, checked) {
       if (checked) selectedIds.add(id);
       else selectedIds.delete(id);
-      updateBatchBar();
+      updateSelectionUI();
+      const card = document.getElementById("card-" + id);
+      if (card) card.classList.toggle("selected", checked);
     }
 
-    function selectAll(val) {
-      if (val) {
-        allFiles.forEach(f => selectedIds.add(f.id));
+    function toggleMasterSelect(checked) {
+      if (checked) {
+        selectAllCurrentPage();
       } else {
-        selectedIds.clear();
+        currentFiles.forEach(f => selectedIds.delete(f.id));
+        updateSelectionUI();
+        renderGrid(currentFiles);
       }
-      updateBatchBar();
-      renderGrid(allFiles);
     }
 
-    function updateBatchBar() {
-      const bar = document.getElementById("batchBar");
+    function selectAllCurrentPage() {
+      if (!currentFiles || currentFiles.length === 0) return;
+      currentFiles.forEach(f => selectedIds.add(f.id));
+      updateSelectionUI();
+      renderGrid(currentFiles);
+      showToast(`已勾选当前页 ${currentFiles.length} 部视频`);
+    }
+
+    async function selectAllOverall() {
+      const key = getAuthKey();
+      const headers = key ? { "Authorization": `Bearer ${key}` } : {};
+      try {
+        const q = encodeURIComponent(searchQuery);
+        const res = await fetch(`/api/admin/ids?search=${q}`, { headers });
+        if (res.status === 401) {
+          openAuthModal();
+          return;
+        }
+        const data = await res.json();
+        const ids = data.ids || [];
+        ids.forEach(id => selectedIds.add(id));
+        updateSelectionUI();
+        renderGrid(currentFiles);
+        showToast(`已全选所有 ${ids.length} 部视频`);
+      } catch (e) {
+        console.error("获取视频 ID 列表失败", e);
+      }
+    }
+
+    function deselectAll() {
+      selectedIds.clear();
+      updateSelectionUI();
+      renderGrid(currentFiles);
+      showToast("已取消所有勾选");
+    }
+
+    function updateSelectionUI() {
+      const count = selectedIds.size;
+      const badge = document.getElementById("selectionBadge");
       const countEl = document.getElementById("selectedCount");
-      if (selectedIds.size > 0) {
-        bar.classList.add("active");
-        countEl.innerText = selectedIds.size;
+      const delBtn = document.getElementById("batchDeleteBtn");
+      const delCount = document.getElementById("batchDeleteCount");
+      const master = document.getElementById("masterCheckbox");
+
+      countEl.innerText = count;
+      delCount.innerText = count;
+
+      if (count > 0) {
+        badge.style.display = "inline-flex";
+        delBtn.style.display = "inline-flex";
       } else {
-        bar.classList.remove("active");
+        badge.style.display = "none";
+        delBtn.style.display = "none";
+      }
+
+      if (currentFiles.length > 0) {
+        const allPageSelected = currentFiles.every(f => selectedIds.has(f.id));
+        const somePageSelected = currentFiles.some(f => selectedIds.has(f.id));
+        master.checked = allPageSelected;
+        master.indeterminate = !allPageSelected && somePageSelected;
+      } else {
+        master.checked = false;
+        master.indeterminate = false;
       }
     }
 
     async function batchDeleteSelected() {
       if (selectedIds.size === 0) return;
-      if (!confirm(`确定彻底删除选中的 ${selectedIds.size} 部视频及其关联文件吗？`)) return;
+      const count = selectedIds.size;
+      if (!confirm(`确定彻底删除选中的 ${count} 部视频及其关联文件吗？此操作无法撤销！`)) return;
 
       const key = getAuthKey();
       const headers = { "Content-Type": "application/json" };
@@ -810,23 +1050,85 @@ def get_admin_html() -> str:
           body: JSON.stringify({ ids: Array.from(selectedIds) }),
         });
         const d = await res.json();
-        showToast(`已成功删除 ${d.deleted_count || selectedIds.size} 个视频`);
+        showToast(`已成功删除 ${d.deleted_count || count} 部视频`);
         selectedIds.clear();
-        updateBatchBar();
-        loadFiles();
+        await loadFiles();
+      } catch (e) {
+        alert("批量删除失败: " + e.message);
+      }
+    }
+
+    async function deleteSingle(id) {
+      if (!confirm("确定彻底删除此视频及其关联文件吗？")) return;
+      const key = getAuthKey();
+      const headers = { "Content-Type": "application/json" };
+      if (key) headers["Authorization"] = `Bearer ${key}`;
+
+      try {
+        const res = await fetch("/api/admin/delete", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ ids: [id] }),
+        });
+        const d = await res.json();
+        showToast("已成功删除该视频");
+        selectedIds.delete(id);
+        await loadFiles();
       } catch (e) {
         alert("删除失败: " + e.message);
       }
     }
 
-    async function deleteSingle(id) {
-      if (!confirm("确定删除此视频文件吗？")) return;
-      selectedIds.add(id);
-      await batchDeleteSelected();
+    function renderPagination() {
+      const bar = document.getElementById("paginationBar");
+      if (totalItems === 0 || pageSize === 0) {
+        bar.style.display = "none";
+        return;
+      }
+      bar.style.display = "flex";
+
+      document.getElementById("pgTotal").innerText = totalItems;
+      document.getElementById("pgCurrent").innerText = currentPage;
+      document.getElementById("pgTotalPages").innerText = totalPages;
+
+      document.getElementById("btnFirst").disabled = currentPage <= 1;
+      document.getElementById("btnPrev").disabled = currentPage <= 1;
+      document.getElementById("btnNext").disabled = currentPage >= totalPages;
+      document.getElementById("btnLast").disabled = currentPage >= totalPages;
+
+      const container = document.getElementById("pageNumberButtons");
+      container.innerHTML = "";
+
+      let startPage = Math.max(1, currentPage - 2);
+      let endPage = Math.min(totalPages, currentPage + 2);
+      if (currentPage <= 3) endPage = Math.min(totalPages, 5);
+      if (currentPage >= totalPages - 2) startPage = Math.max(1, totalPages - 4);
+
+      for (let i = startPage; i <= endPage; i++) {
+        const btn = document.createElement("button");
+        btn.className = "page-btn" + (i === currentPage ? " active" : "");
+        btn.innerText = i;
+        btn.onclick = () => goToPage(i);
+        container.appendChild(btn);
+      }
+    }
+
+    function goToPage(p) {
+      p = Math.max(1, Math.min(p, totalPages));
+      if (p === currentPage) return;
+      currentPage = p;
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      loadFiles();
+    }
+
+    function changePageSize(newSize) {
+      pageSize = newSize;
+      currentPage = 1;
+      loadFiles();
     }
 
     function openPlayerModal(id) {
-      const item = allFiles.find(f => f.id === id);
+      const item = currentFiles.find(f => f.id === id);
       if (!item) return;
       currentModalItem = item;
 
@@ -926,18 +1228,14 @@ def get_admin_html() -> str:
       loadFiles();
     }
 
-    // 搜索过滤
+    // 搜索过滤（防抖 300ms，重置到第一页请求后端过滤）
     document.getElementById("searchInput").addEventListener("input", (e) => {
-      const q = e.target.value.toLowerCase().trim();
-      if (!q) {
-        renderGrid(allFiles);
-        return;
-      }
-      const filtered = allFiles.filter(it =>
-        (it.title && it.title.toLowerCase().includes(q)) ||
-        (it.id && it.id.toLowerCase().includes(q))
-      );
-      renderGrid(filtered);
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        searchQuery = e.target.value.trim();
+        currentPage = 1;
+        loadFiles();
+      }, 300);
     });
 
     // 手动刷新处理

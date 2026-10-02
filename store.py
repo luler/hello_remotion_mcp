@@ -129,6 +129,14 @@ class VideoStore:
         paged = items[offset : offset + limit] if limit > 0 else items
         return paged, total
 
+    def total_bytes(self) -> int:
+        with _lock:
+            return sum(it.get("bytes", 0) for it in self._items)
+
+    def list_ids(self, search: str = "", mode: str = "") -> list[str]:
+        items, _ = self.list(search=search, mode=mode, limit=0, offset=0)
+        return [it["id"] for it in items]
+
     def delete(self, item_id: str) -> bool:
         with _lock:
             before_len = len(self._items)

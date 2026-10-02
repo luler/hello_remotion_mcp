@@ -206,20 +206,25 @@ def api_admin_files(
     authorization: str | None = Header(None),
     auth_key: str | None = Query(None),
     search: str = Query("", description="搜索关键词"),
+    page: int = Query(1, ge=1, description="当前页码（从 1 开始）"),
+    page_size: int = Query(12, ge=0, le=500, description="每页显示数量，0 表示获取全部"),
 ):
-    """获取所有已生成的视频资产列表（严格按生成时间倒序）。"""
+    """获取已生成的视频资产列表（支持分页与关键词检索，严格按生成时间倒序）。"""
     if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    items, total = M.STORE.list(search=search, limit=500)
+    import math
+
+    limit = page_size if page_size > 0 else 0
+    offset = (page - 1) * page_size if page_size > 0 else 0
+
+    items, total = M.STORE.list(search=search, limit=limit, offset=offset)
     base = M.get_base_url()
 
     results = []
-    total_bytes = 0
     for it in items:
         vid = it["id"]
         b = it.get("bytes", 0)
-        total_bytes += b
         results.append({
             "id": vid,
             "title": it.get("title", ""),
@@ -238,11 +243,31 @@ def api_admin_files(
             "files": it.get("files"),
         })
 
+    total_pages = math.ceil(total / page_size) if page_size > 0 else 1
+    total_disk_bytes = M.STORE.total_bytes() if hasattr(M.STORE, "total_bytes") else 0
+
     return {
         "total": total,
-        "total_disk_bytes": total_bytes,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(total_pages, 1),
+        "total_disk_bytes": total_disk_bytes,
         "files": results,
     }
+
+
+@app.get("/api/admin/ids")
+def api_admin_ids(
+    authorization: str | None = Header(None),
+    auth_key: str | None = Query(None),
+    search: str = Query("", description="搜索关键词"),
+):
+    """获取所有匹配条件的视频 ID 列表（用于全选所有视频进行跨页批量操作）。"""
+    if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    ids = M.STORE.list_ids(search=search)
+    return {"total": len(ids), "ids": ids}
 
 
 @app.post("/api/admin/delete")

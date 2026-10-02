@@ -59,10 +59,10 @@ services:
       - ./remotion_engine/renderer.py:/app/remotion_engine/renderer.py # 渲染执行器子进程调度
       - ./remotion_engine/remotion.config.ts:/app/remotion_engine/remotion.config.ts # Remotion 核心编译配置
 
-    # 容器健康检查探针：每 30 秒探测一次服务连通性
+    # 容器健康检查探针：每 300 秒探测一次服务连通性
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:48001/healthz || exit 1" ]
-      interval: 30s
+      interval: 300s
       timeout: 5s
       retries: 3
       start_period: 15s
