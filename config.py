@@ -24,7 +24,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(STORE_DIR, exist_ok=True)
 
 # 渲染性能与超时控制配置（可通过环境变量动态调整）
-RENDER_TIMEOUT = int(os.environ.get("RENDER_TIMEOUT", "120"))  # 单个视频渲染超时秒数，默认 120 秒
+RENDER_TIMEOUT = int(os.environ.get("RENDER_TIMEOUT", "600"))  # 单个视频渲染超时秒数，默认 600 秒（10分钟）
 REMOTION_CONCURRENCY = os.environ.get("REMOTION_CONCURRENCY", "50%").strip()  # Remotion 内部并发标签数 (如 50%, 8, 4)
 MAX_CONCURRENT_RENDERS = int(os.environ.get("MAX_CONCURRENT_RENDERS", "2"))  # 异步信号量最大并发任务数
 

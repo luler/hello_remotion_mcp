@@ -27,7 +27,7 @@ services:
       - AUTH_KEY=${AUTH_KEY:-}                          # 访问安全密钥（留空免密放行；非空时 /mcp 与 /admin 后台均需凭证访问）
 
       # ----------------- 2. 渲染性能与超时控制 -----------------
-      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-120}           # 单个视频渲染最大超时秒数（默认 120 秒，长视频可调为 300）
+      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，默认支持长视频生成任务）
       - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%} # Remotion 内部并发渲染标签数（默认 50% CPU 核心，也可填具体数字如 4、8）
       - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2} # 异步信号量最大并发渲染任务数（防止多客户端并发把 CPU/内存打满）
 
