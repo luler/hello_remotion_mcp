@@ -163,6 +163,16 @@ def get_admin_html() -> str:
       background: var(--danger);
       color: #fff;
     }
+    .btn-refresh .refresh-icon {
+      display: inline-block;
+      transition: transform 0.3s ease;
+    }
+    .btn-refresh.loading .refresh-icon {
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      100% { transform: rotate(360deg); }
+    }
 
     /* 状态与统计栏 */
     .stat-bar {
@@ -548,7 +558,9 @@ def get_admin_html() -> str:
         <span class="search-icon">🔍</span>
         <input type="text" id="searchInput" class="search-input" placeholder="搜索视频标题或 ID..." />
       </div>
-      <button class="btn btn-secondary" onclick="loadFiles(true)">🔄 刷新</button>
+      <button class="btn btn-secondary btn-refresh" id="refreshBtn" onclick="handleManualRefresh()" title="手动刷新视频列表">
+        <span class="refresh-icon">🔄</span> 刷新列表
+      </button>
       <button class="btn btn-secondary" id="authBtn" onclick="openAuthModal()">🔑 凭据验证</button>
     </div>
   </header>
@@ -928,6 +940,16 @@ def get_admin_html() -> str:
       renderGrid(filtered);
     });
 
+    // 手动刷新处理
+    async function handleManualRefresh() {
+      const btn = document.getElementById("refreshBtn");
+      if (btn) btn.classList.add("loading");
+      await loadFiles(true);
+      setTimeout(() => {
+        if (btn) btn.classList.remove("loading");
+      }, 400);
+    }
+
     // 快捷键 Esc 关闭弹窗
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -936,13 +958,8 @@ def get_admin_html() -> str:
       }
     });
 
-    // 初始化加载与前台 4 秒自动增量同步
+    // 仅在初次进入页面时加载一次列表，不进行任何后台定时轮询刷新
     loadFiles();
-    setInterval(() => {
-      if (!document.hidden && !currentModalItem) {
-        loadFiles();
-      }
-    }, 4000);
   </script>
 </body>
 </html>

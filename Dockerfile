@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     tini \
     fonts-noto-cjk \
+    fonts-noto-color-emoji \
     fonts-wqy-zenhei \
     fonts-wqy-microhei \
     fonts-liberation \
