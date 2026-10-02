@@ -29,6 +29,24 @@ class VideoStore:
         self._items: list[dict[str, Any]] = []
         self._load()
 
+    @staticmethod
+    def _infer_render_time(it: dict[str, Any]) -> float:
+        """从视频 ID 的发起时间戳与完成登记时间戳自动推算历史视频的渲染耗时"""
+        vid = str(it.get("id") or "")
+        created_at = str(it.get("created_at") or "")
+        parts = vid.split("_")
+        if len(parts) >= 4 and len(parts[2]) == 8 and len(parts[3]) == 6 and created_at:
+            try:
+                import datetime
+                start_dt = datetime.datetime.strptime(f"{parts[2]}_{parts[3]}", "%Y%m%d_%H%M%S")
+                finish_dt = datetime.datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+                diff = (finish_dt - start_dt).total_seconds()
+                if 0 < diff < 86400:
+                    return round(diff, 2)
+            except Exception:
+                pass
+        return 0.0
+
     def _load(self):
         if os.path.exists(self._index_path):
             try:
@@ -37,7 +55,30 @@ class VideoStore:
             except Exception:
                 self._items = []
         # 清理在磁盘上已被删除的视频文件索引
-        self._items = [it for it in self._items if os.path.exists(it.get("path", ""))]
+        def _check_exists(p: str) -> bool:
+            if not p:
+                return False
+            if os.path.exists(p):
+                return True
+            if p.startswith("/app/data/"):
+                rel = p[len("/app/data/"):]
+                local_cand = os.path.normpath(os.path.join(self.root, "..", rel))
+                if os.path.exists(local_cand):
+                    return True
+            return False
+
+        self._items = [it for it in self._items if _check_exists(it.get("path", ""))]
+
+        # 兼容旧数据：若历史记录缺少 render_time_seconds，自动通过起始与完成时间推算补齐
+        updated = False
+        for it in self._items:
+            if not it.get("render_time_seconds"):
+                inferred = self._infer_render_time(it)
+                if inferred > 0:
+                    it["render_time_seconds"] = inferred
+                    updated = True
+        if updated:
+            self._flush()
 
     def _flush(self):
         tmp = self._index_path + ".tmp"
