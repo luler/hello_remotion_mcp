@@ -344,13 +344,8 @@ def _resolve_video_record(item_id: str):
 async def api_stream_video(
     item_id: str,
     request: Request,
-    authorization: str | None = Header(None),
-    auth_key: str | None = Query(None),
 ):
-    """在线流式播放视频（完整支持 HTTP 206 Range 分段加载与平滑拖动寻道，兼容 HEAD 预检）。"""
-    if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
+    """在线流式播放视频（完整支持 HTTP 206 Range 分段加载与平滑拖动寻道，兼容 HEAD 预检，公开资源免密放行）。"""
     rec, path, title = _resolve_video_record(item_id)
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Video not found")
@@ -401,15 +396,8 @@ async def api_stream_video(
 
 
 @app.api_route("/api/download/{item_id:path}", methods=["GET", "HEAD"])
-def api_download_video(
-    item_id: str,
-    authorization: str | None = Header(None),
-    auth_key: str | None = Query(None),
-):
-    """强制附件下载 MP4 高清视频文件。"""
-    if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
+def api_download_video(item_id: str):
+    """强制附件下载 MP4 高清视频文件（公开资源免密放行）。"""
     rec, path, title = _resolve_video_record(item_id)
     if not path or not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Video not found")
@@ -419,14 +407,9 @@ def api_download_video(
 
 
 @app.api_route("/api/poster/{item_id:path}", methods=["GET", "HEAD"])
-def api_get_poster(
-    item_id: str,
-    authorization: str | None = Header(None),
-    auth_key: str | None = Query(None),
-):
-    """获取视频对应的高清封面图。"""
-    if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
-        raise HTTPException(status_code=401, detail="Unauthorized")
+def api_get_poster(item_id: str):
+    """获取视频对应的高清封面图（公开资源免密放行，供 Markdown 与前端标签直接加载展示）。"""
+
 
     raw_id = item_id
     for suffix in [".jpg", ".jpeg", ".png", ".mp4"]:
