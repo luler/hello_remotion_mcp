@@ -116,6 +116,14 @@ async def render_spec_to_video(
         width, height = 1080, 1920
     elif platform in ("square", "instagram_square"):
         width, height = 1080, 1080
+    elif platform in ("instagram_portrait", "post_4_5"):
+        width, height = 1080, 1350
+    elif platform in ("ultrawide", "21:9"):
+        width, height = 2560, 1080
+    elif platform in ("classic_4_3", "4:3"):
+        width, height = 1440, 1080
+
+    # 优先使用用户显式声明的自定义宽高像素
     if spec.get("width"):
         width = int(spec["width"])
     if spec.get("height"):

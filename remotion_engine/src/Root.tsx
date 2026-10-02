@@ -45,8 +45,18 @@ export const RemotionRoot: React.FC = () => {
           } else if (platform === "square" || platform === "instagram_square") {
             width = 1080;
             height = 1080;
+          } else if (platform === "instagram_portrait" || platform === "post_4_5") {
+            width = 1080;
+            height = 1350;
+          } else if (platform === "ultrawide" || platform === "21:9") {
+            width = 2560;
+            height = 1080;
+          } else if (platform === "classic_4_3" || platform === "4:3") {
+            width = 1440;
+            height = 1080;
           }
 
+          // 用户显式指定的任意自定义像素画幅（最高优先级）
           if (spec.width) width = Number(spec.width);
           if (spec.height) height = Number(spec.height);
 

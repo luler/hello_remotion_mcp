@@ -33,6 +33,8 @@ export interface SpecData {
   title?: string;
   theme?: string;
   platform?: string;
+  width?: number;
+  height?: number;
   fps?: number;
   audioUrl?: string;
   bgm?: string;

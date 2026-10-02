@@ -114,9 +114,13 @@ PLATFORMS = {
     "tiktok": {"name": "TikTok / 竖屏 9:16", "width": 1080, "height": 1920, "aspect": "9:16"},
     "shorts": {"name": "Shorts / Reels 9:16", "width": 1080, "height": 1920, "aspect": "9:16"},
     "portrait": {"name": "标准竖屏 9:16", "width": 1080, "height": 1920, "aspect": "9:16"},
-    "instagram_square": {"name": "方图 1:1", "width": 1080, "height": 1080, "aspect": "1:1"},
+    "instagram_square": {"name": "社交方图 1:1", "width": 1080, "height": 1080, "aspect": "1:1"},
     "square": {"name": "标准方形 1:1", "width": 1080, "height": 1080, "aspect": "1:1"},
-    "linkedin": {"name": "LinkedIn 视频", "width": 1920, "height": 1080, "aspect": "16:9"},
+    "instagram_portrait": {"name": "社交竖版卡片 4:5", "width": 1080, "height": 1350, "aspect": "4:5"},
+    "ultrawide": {"name": "电影级超宽屏 21:9", "width": 2560, "height": 1080, "aspect": "21:9"},
+    "classic_4_3": {"name": "经典传统画幅 4:3", "width": 1440, "height": 1080, "aspect": "4:3"},
+    "linkedin": {"name": "LinkedIn 商务视频 16:9", "width": 1920, "height": 1080, "aspect": "16:9"},
+    "custom": {"name": "用户自定义像素画幅 (在 Spec 中指定 width 与 height)", "width": 0, "height": 0, "aspect": "custom"},
 }
 
 # 示例模板 Spec，供大模型直接参考
