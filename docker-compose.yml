@@ -25,10 +25,11 @@ services:
       - BASE_URL=${BASE_URL:-}                          # 外部访问基础 URL（如 https://video.domain.com，留空则自动根据请求头动态识别）
       - AUTH_KEY=${AUTH_KEY:-}                          # 访问安全密钥（留空免密放行；非空时 /mcp 与 /admin 后台均需凭证访问）
 
-      # ----------------- 2. 渲染性能与超时控制（最大安全加速阈值） -----------------
+      # ----------------- 2. 渲染性能与超时控制（黄金安全加速阈值） -----------------
       - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，统一后台硬管控）
-      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-85%} # Remotion 内部并发渲染标签数（提高至 85% CPU 核心，压榨最大多核并行加速）
+      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%} # Remotion 内部并发渲染标签数（严禁超过 75% 或 85%，否则瞬间启动十几个浏览器导致端口连接拒绝崩溃）
       - X264_PRESET=${X264_PRESET:-superfast}           # x264 视频压缩算法档位（superfast 比 veryfast 提速 30~40%，兼顾极高质量）
+
 
       - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2} # 异步信号量最大并发渲染任务数（防止多客户端并发把 CPU/内存打满）
 

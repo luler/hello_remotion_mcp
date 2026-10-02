@@ -15,6 +15,9 @@ if (isLinux) {
 Config.setChromiumDisableWebSecurity(true);
 Config.setChromiumIgnoreCertificateErrors(true);
 Config.setChromiumHeadlessMode(true);
+Config.setTimeoutInMilliseconds(90000);
+Config.setDelayRenderTimeoutInMilliseconds(90000);
+
 
 // Set reasonable concurrency (read REMOTION_CONCURRENCY if set, or default half of cores)
 const envConcurrency = process.env.REMOTION_CONCURRENCY?.trim();
@@ -24,7 +27,8 @@ if (envConcurrency && envConcurrency.endsWith("%")) {
   Config.setConcurrency(Number(envConcurrency));
 } else {
   const cpuCores = os.cpus()?.length || 4;
-  Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.75), 2), 16));
+  Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.5), 2), 10));
 }
+
 
 

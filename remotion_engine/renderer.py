@@ -187,7 +187,7 @@ async def render_spec_to_video(
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
     config_file = ENGINE_DIR / "remotion.config.ts"
-    concurrency = os.environ.get("REMOTION_CONCURRENCY", "75%").strip() or "75%"
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "50%").strip() or "50%"
     x264_preset = os.environ.get("X264_PRESET", "superfast").strip() or "superfast"
 
     cmd = [
@@ -325,7 +325,7 @@ async def render_code_to_video(
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
     config_file = ENGINE_DIR / "remotion.config.ts"
-    concurrency = os.environ.get("REMOTION_CONCURRENCY", "75%").strip() or "75%"
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "50%").strip() or "50%"
     x264_preset = os.environ.get("X264_PRESET", "superfast").strip() or "superfast"
 
     cmd = [
