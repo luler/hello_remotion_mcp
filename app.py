@@ -13,6 +13,7 @@ import shutil
 import time
 from urllib.parse import parse_qs
 
+import anyio
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
@@ -348,13 +349,13 @@ async def api_stream_video(
         end = min(end, file_size - 1)
         chunk_size = (end - start) + 1
 
-        def iter_chunk():
-            with open(path, "rb") as f:
-                f.seek(start)
+        async def iter_chunk():
+            async with await anyio.open_file(path, "rb") as f:
+                await f.seek(start)
                 bytes_left = chunk_size
                 while bytes_left > 0:
                     read_len = min(65536, bytes_left)
-                    data = f.read(read_len)
+                    data = await f.read(read_len)
                     if not data:
                         break
                     bytes_left -= len(data)

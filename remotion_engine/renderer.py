@@ -38,8 +38,29 @@ def get_ffmpeg_cmd() -> str:
     return cmd
 
 
-def extract_poster(video_path: str, poster_path: str, time_offset: float = 1.0) -> bool:
-    """使用 ffmpeg 极速截取视频的一帧作为高清封面图。"""
+_RENDER_SEMAPHORE: asyncio.Semaphore | None = None
+_CODE_RENDER_LOCK: asyncio.Lock | None = None
+
+
+def get_render_semaphore() -> asyncio.Semaphore:
+    """获取并发渲染信号量（默认最大 2 个并发任务，防止多客户端并发导致 CPU/内存挤占）。"""
+    global _RENDER_SEMAPHORE
+    if _RENDER_SEMAPHORE is None:
+        max_concurrent = int(os.environ.get("MAX_CONCURRENT_RENDERS", "2"))
+        _RENDER_SEMAPHORE = asyncio.Semaphore(max_concurrent)
+    return _RENDER_SEMAPHORE
+
+
+def get_code_render_lock() -> asyncio.Lock:
+    """获取源码模式编译运行互斥锁（保护 src/user 代码隔离）。"""
+    global _CODE_RENDER_LOCK
+    if _CODE_RENDER_LOCK is None:
+        _CODE_RENDER_LOCK = asyncio.Lock()
+    return _CODE_RENDER_LOCK
+
+
+async def extract_poster(video_path: str, poster_path: str, time_offset: float = 1.0) -> bool:
+    """使用 ffmpeg 极速截取视频的一帧作为高清封面图（纯异步非阻塞子进程）。"""
     if not os.path.exists(video_path):
         return False
     ffmpeg = get_ffmpeg_cmd()
@@ -57,8 +78,13 @@ def extract_poster(video_path: str, poster_path: str, time_offset: float = 1.0) 
         poster_path,
     ]
     try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
-        return res.returncode == 0 and os.path.exists(poster_path) and os.path.getsize(poster_path) > 0
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=20)
+        return proc.returncode == 0 and os.path.exists(poster_path) and os.path.getsize(poster_path) > 0
     except Exception as e:
         logger.warning(f"Failed to extract poster with ffmpeg: {e}")
         return False
@@ -70,7 +96,7 @@ async def render_spec_to_video(
     output_dir: str,
     timeout: int = 300,
 ) -> dict[str, Any]:
-    """依据声明式 JSON Spec 渲染 MP4 视频。"""
+    """依据声明式 JSON Spec 渲染 MP4 视频（受并发信号量平滑调控）。"""
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
@@ -120,32 +146,33 @@ async def render_spec_to_video(
         gl_flag,
     ]
 
-    # 若环境变量中指定了 Chromium 路径（例如 Docker 容器环境 /usr/bin/chromium）
     chromium_path = os.environ.get("PUPPETEER_EXECUTABLE_PATH")
     if chromium_path and os.path.exists(chromium_path):
         cmd.append(f"--browser-executable={chromium_path}")
 
     start_time = time.time()
+    sem = get_render_semaphore()
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(ENGINE_DIR),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        elapsed = round(time.time() - start_time, 2)
+        async with sem:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(ENGINE_DIR),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            elapsed = round(time.time() - start_time, 2)
 
-        if proc.returncode != 0:
-            err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
-            logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
-            return {
-                "success": False,
-                "error": f"Remotion render failed: {err_msg}",
-            }
+            if proc.returncode != 0:
+                err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+                logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
+                return {
+                    "success": False,
+                    "error": f"Remotion render failed: {err_msg}",
+                }
 
-        # 提取封面图
-        extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
+            # 异步提取封面图
+            await extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
 
         file_size = os.path.getsize(out_video) if os.path.exists(out_video) else 0
 
@@ -188,24 +215,10 @@ async def render_code_to_video(
     input_props: dict[str, Any] | None = None,
     timeout: int = 300,
 ) -> dict[str, Any]:
-    """依据用户提供的 React / Remotion 源码多文件字典渲染 MP4 视频。"""
+    """依据用户提供的 React / Remotion 源码多文件字典渲染 MP4 视频（受并发信号量与代码隔离锁调控）。"""
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
-
-    USER_SRC_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 规范化并写入用户代码文件到 src/user 目录下
-    for rel_path, code in files.items():
-        clean_path = rel_path.lstrip("/\\")
-        if clean_path.startswith("src/"):
-            clean_path = clean_path[4:]
-        if clean_path.startswith("user/"):
-            clean_path = clean_path[5:]
-        target_file = USER_SRC_DIR / clean_path
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-        with open(target_file, "w", encoding="utf-8") as f:
-            f.write(code)
 
     duration_in_frames = max(int(duration_in_frames), 30)
     fps = max(int(fps), 1)
@@ -244,25 +257,44 @@ async def render_code_to_video(
         cmd.append(f"--browser-executable={chromium_path}")
 
     start_time = time.time()
+    sem = get_render_semaphore()
+    code_lock = get_code_render_lock()
+
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=str(ENGINE_DIR),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        elapsed = round(time.time() - start_time, 2)
+        async with sem:
+            async with code_lock:
+                USER_SRC_DIR.mkdir(parents=True, exist_ok=True)
+                # 规范化并写入用户代码文件到 src/user 目录下
+                for rel_path, code in files.items():
+                    clean_path = rel_path.lstrip("/\\")
+                    if clean_path.startswith("src/"):
+                        clean_path = clean_path[4:]
+                    if clean_path.startswith("user/"):
+                        clean_path = clean_path[5:]
+                    target_file = USER_SRC_DIR / clean_path
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(target_file, "w", encoding="utf-8") as f:
+                        f.write(code)
 
-        if proc.returncode != 0:
-            err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
-            logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
-            return {
-                "success": False,
-                "error": f"Remotion render failed: {err_msg}",
-            }
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(ENGINE_DIR),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                elapsed = round(time.time() - start_time, 2)
 
-        extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
+                if proc.returncode != 0:
+                    err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
+                    logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
+                    return {
+                        "success": False,
+                        "error": f"Remotion render failed: {err_msg}",
+                    }
+
+                # 异步提取封面图
+                await extract_poster(out_video, out_poster, time_offset=min(1.0, duration_seconds * 0.2))
 
         file_size = os.path.getsize(out_video) if os.path.exists(out_video) else 0
 
