@@ -16,4 +16,6 @@ data/store/*
 data/public/*
 !data/public/.gitkeep
 .env
+remotion_engine/src/user/*
+!remotion_engine/src/user/.gitkeep
 

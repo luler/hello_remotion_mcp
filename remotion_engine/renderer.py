@@ -19,6 +19,42 @@ ENGINE_DIR = Path(__file__).resolve().parent
 SRC_INDEX = ENGINE_DIR / "src" / "index.ts"
 USER_SRC_DIR = ENGINE_DIR / "src" / "user"
 
+DEFAULT_USER_VIDEO = '''import React from "react";
+import { AbsoluteFill } from "remotion";
+
+export const Video: React.FC = () => {
+  return (
+    <AbsoluteFill
+      style={{
+        backgroundColor: "#0f172a",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        color: "#94a3b8",
+        fontSize: 32,
+        fontFamily: "sans-serif",
+      }}
+    >
+      Remotion Studio Ready
+    </AbsoluteFill>
+  );
+};
+
+export default Video;
+'''
+
+
+def ensure_user_video_template() -> None:
+    """确保运行时代码目录与默认入口组件存在，防止全新 clone 或缺失文件时 Webpack 编译失败。"""
+    USER_SRC_DIR.mkdir(parents=True, exist_ok=True)
+    video_file = USER_SRC_DIR / "Video.tsx"
+    if not video_file.exists():
+        video_file.write_text(DEFAULT_USER_VIDEO, encoding="utf-8")
+
+
+ensure_user_video_template()
+
+
 
 def get_npx_cmd() -> str:
     """自适应操作系统平台返回 npx 执行路径。"""
