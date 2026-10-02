@@ -24,6 +24,7 @@ if (envConcurrency && envConcurrency.endsWith("%")) {
   Config.setConcurrency(Number(envConcurrency));
 } else {
   const cpuCores = os.cpus()?.length || 4;
-  Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.5), 2), 12));
+  Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.75), 2), 16));
 }
+
 

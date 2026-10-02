@@ -127,8 +127,8 @@ async def extract_poster(video_path: str, poster_path: str, time_offset: float =
 
 
 def get_render_timeout() -> int:
-    """获取单个渲染任务超时秒数（优先读取环境变量 RENDER_TIMEOUT，默认 120 秒）。"""
-    return int(os.environ.get("RENDER_TIMEOUT", "120"))
+    """获取单个渲染任务超时秒数（优先读取环境变量 RENDER_TIMEOUT，默认 600 秒/10分钟）。"""
+    return int(os.environ.get("RENDER_TIMEOUT", "600"))
 
 
 async def render_spec_to_video(
@@ -138,7 +138,8 @@ async def render_spec_to_video(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """依据声明式 JSON Spec 渲染 MP4 视频（受并发信号量平滑调控）。"""
-    effective_timeout = timeout if (timeout is not None and timeout > 0) else get_render_timeout()
+    # 统一使用后台配置的最大渲染超时秒数（默认 600 秒），防止前端或 LLM 误传入过小数值导致频繁渲染中断
+    effective_timeout = get_render_timeout()
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
@@ -186,7 +187,8 @@ async def render_spec_to_video(
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
     config_file = ENGINE_DIR / "remotion.config.ts"
-    concurrency = os.environ.get("REMOTION_CONCURRENCY", "").strip()
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "75%").strip() or "75%"
+    x264_preset = os.environ.get("X264_PRESET", "superfast").strip() or "superfast"
 
     cmd = [
         npx,
@@ -200,11 +202,11 @@ async def render_spec_to_video(
         "--image-format=jpeg",
         "--jpeg-quality=85",
         "--bundle-cache",
-        "--x264-preset=veryfast",
+        f"--x264-preset={x264_preset}",
         gl_flag,
+        f"--concurrency={concurrency}",
     ]
-    if concurrency:
-        cmd.append(f"--concurrency={concurrency}")
+
     if sys.platform != "win32":
         cmd.append("--enable-multiprocess-on-linux")
 
@@ -296,7 +298,8 @@ async def render_code_to_video(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """依据用户提供的 React / Remotion 源码多文件字典渲染 MP4 视频（受并发信号量与代码隔离锁调控）。"""
-    effective_timeout = timeout if (timeout is not None and timeout > 0) else get_render_timeout()
+    # 统一使用后台配置的最大渲染超时秒数（默认 600 秒），防止前端或 LLM 误传入过小数值导致频繁渲染中断
+    effective_timeout = get_render_timeout()
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
@@ -322,7 +325,8 @@ async def render_code_to_video(
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
     config_file = ENGINE_DIR / "remotion.config.ts"
-    concurrency = os.environ.get("REMOTION_CONCURRENCY", "").strip()
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "75%").strip() or "75%"
+    x264_preset = os.environ.get("X264_PRESET", "superfast").strip() or "superfast"
 
     cmd = [
         npx,
@@ -337,11 +341,11 @@ async def render_code_to_video(
         "--image-format=jpeg",
         "--jpeg-quality=85",
         "--bundle-cache",
-        "--x264-preset=veryfast",
+        f"--x264-preset={x264_preset}",
         gl_flag,
+        f"--concurrency={concurrency}",
     ]
-    if concurrency:
-        cmd.append(f"--concurrency={concurrency}")
+
     if sys.platform != "win32":
         cmd.append("--enable-multiprocess-on-linux")
 

@@ -10,11 +10,10 @@ services:
 
     # =========================================================================
     # 【核心性能参数】共享内存大小 (Shared Memory)
-    # Chromium 无头浏览器在光栅化 1080p/4K 视频帧时高度依赖 /dev/shm。
-    # Docker 默认仅分配 64MB，在多光栅线程或高分辨率下极易导致 Chromium 崩溃。
-    # 强烈建议保持 2gb（若宿主机内存紧张，最低不建议低于 1gb）。
+    # Chromium 无头浏览器在多进程光栅化 1080p/4K 视频帧时高度依赖 /dev/shm。
+    # 调整为 4gb（最大化安全阈值，防止高并发或多标签 Chromium 渲染时共享内存溢出崩溃；若宿主机总物理内存低于 8G 可调为 2gb）。
     # =========================================================================
-    shm_size: '2gb'
+    shm_size: '4gb'
 
     # 端口映射：宿主机端口:容器内端口（可通过 .env 文件中的 PORT 变量覆盖，默认 48001）
     ports:
@@ -26,10 +25,12 @@ services:
       - BASE_URL=${BASE_URL:-}                          # 外部访问基础 URL（如 https://video.domain.com，留空则自动根据请求头动态识别）
       - AUTH_KEY=${AUTH_KEY:-}                          # 访问安全密钥（留空免密放行；非空时 /mcp 与 /admin 后台均需凭证访问）
 
-      # ----------------- 2. 渲染性能与超时控制 -----------------
-      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，默认支持长视频生成任务）
-      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%} # Remotion 内部并发渲染标签数（默认 50% CPU 核心，也可填具体数字如 4、8）
+      # ----------------- 2. 渲染性能与超时控制（最大安全加速阈值） -----------------
+      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，统一后台硬管控）
+      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-75%} # Remotion 内部并发渲染标签数（默认利用 75% CPU 核心，最大安全压榨渲染吞吐）
+      - X264_PRESET=${X264_PRESET:-superfast}           # x264 视频压缩算法档位（superfast 比 veryfast 提速 30~40%，兼顾极高质量）
       - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2} # 异步信号量最大并发渲染任务数（防止多客户端并发把 CPU/内存打满）
+
 
       # ----------------- 3. 存储与引擎路径配置 -----------------
       - REMOTION_WORKSPACE=/app/data                    # 数据根目录
