@@ -18,6 +18,9 @@ services:
       - REMOTION_STORE_DIR=/app/data/store
       - REMOTION_ENGINE_DIR=/app/remotion_engine
       - REMOTION_PUBLIC_DIR=/app/remotion_engine/public
+      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-120}
+      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%}
+      - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2}
       - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
     volumes:

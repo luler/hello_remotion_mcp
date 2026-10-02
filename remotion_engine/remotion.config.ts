@@ -16,6 +16,14 @@ Config.setChromiumDisableWebSecurity(true);
 Config.setChromiumIgnoreCertificateErrors(true);
 Config.setChromiumHeadlessMode(true);
 
-// Set reasonable concurrency (half of cores, clamp between 2 and 8)
-const cpuCores = os.cpus()?.length || 4;
-Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.5), 2), 8));
+// Set reasonable concurrency (read REMOTION_CONCURRENCY if set, or default half of cores)
+const envConcurrency = process.env.REMOTION_CONCURRENCY?.trim();
+if (envConcurrency && envConcurrency.endsWith("%")) {
+  Config.setConcurrency(envConcurrency as any);
+} else if (envConcurrency && !isNaN(Number(envConcurrency))) {
+  Config.setConcurrency(Number(envConcurrency));
+} else {
+  const cpuCores = os.cpus()?.length || 4;
+  Config.setConcurrency(Math.min(Math.max(Math.floor(cpuCores * 0.5), 2), 12));
+}
+

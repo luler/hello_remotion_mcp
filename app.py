@@ -56,6 +56,7 @@ class BatchDeleteIn(BaseModel):
 class RenderSpecIn(BaseModel):
     spec: dict = Field(..., description="视频 Spec 结构")
     name: str = ""
+    timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
 
 
 class RenderCodeIn(BaseModel):
@@ -67,6 +68,8 @@ class RenderCodeIn(BaseModel):
     width: int = 1920
     height: int = 1080
     input_props: dict | None = None
+    timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
+
 
 
 @contextlib.asynccontextmanager
@@ -429,6 +432,7 @@ async def api_render_spec(payload: RenderSpecIn):
         spec=payload.spec,
         item_id=item_id,
         output_dir=M.OUTPUT_DIR,
+        timeout=payload.timeout,
     )
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("error"))
@@ -478,6 +482,7 @@ async def api_render_code(payload: RenderCodeIn):
         width=payload.width,
         height=payload.height,
         input_props=payload.input_props,
+        timeout=payload.timeout,
     )
     if not res.get("success"):
         raise HTTPException(status_code=500, detail=res.get("error"))

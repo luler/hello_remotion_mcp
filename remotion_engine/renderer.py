@@ -90,13 +90,19 @@ async def extract_poster(video_path: str, poster_path: str, time_offset: float =
         return False
 
 
+def get_render_timeout() -> int:
+    """获取单个渲染任务超时秒数（优先读取环境变量 RENDER_TIMEOUT，默认 120 秒）。"""
+    return int(os.environ.get("RENDER_TIMEOUT", "120"))
+
+
 async def render_spec_to_video(
     spec: dict[str, Any],
     item_id: str,
     output_dir: str,
-    timeout: int = 300,
+    timeout: int | None = None,
 ) -> dict[str, Any]:
     """依据声明式 JSON Spec 渲染 MP4 视频（受并发信号量平滑调控）。"""
+    effective_timeout = timeout if (timeout is not None and timeout > 0) else get_render_timeout()
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
@@ -135,6 +141,9 @@ async def render_spec_to_video(
 
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
+    config_file = ENGINE_DIR / "remotion.config.ts"
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "").strip()
+
     cmd = [
         npx,
         "remotion",
@@ -143,10 +152,15 @@ async def render_spec_to_video(
         "SpecVideo",
         out_video,
         f"--props={str(temp_props_path)}",
+        f"--config={str(config_file)}",
+        "--image-format=jpeg",
+        "--jpeg-quality=85",
         "--bundle-cache",
         "--x264-preset=veryfast",
         gl_flag,
     ]
+    if concurrency:
+        cmd.append(f"--concurrency={concurrency}")
     if sys.platform != "win32":
         cmd.append("--enable-multiprocess-on-linux")
 
@@ -169,7 +183,7 @@ async def render_spec_to_video(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
             elapsed = round(time.time() - start_time, 2)
 
             if proc.returncode != 0:
@@ -206,7 +220,7 @@ async def render_spec_to_video(
                 await proc.wait()
             except Exception:
                 pass
-        return {"success": False, "error": f"Render timed out after {timeout} seconds"}
+        return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
     except Exception as e:
         if proc:
             try:
@@ -223,6 +237,7 @@ async def render_spec_to_video(
                 pass
 
 
+
 async def render_code_to_video(
     files: dict[str, str],
     item_id: str,
@@ -234,9 +249,10 @@ async def render_code_to_video(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
-    timeout: int = 300,
+    timeout: int | None = None,
 ) -> dict[str, Any]:
     """依据用户提供的 React / Remotion 源码多文件字典渲染 MP4 视频（受并发信号量与代码隔离锁调控）。"""
+    effective_timeout = timeout if (timeout is not None and timeout > 0) else get_render_timeout()
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")
     out_poster = os.path.join(output_dir, f"{item_id}.jpg")
@@ -261,6 +277,9 @@ async def render_code_to_video(
 
     npx = get_npx_cmd()
     gl_flag = "--gl=swangle" if sys.platform != "win32" else "--gl=angle"
+    config_file = ENGINE_DIR / "remotion.config.ts"
+    concurrency = os.environ.get("REMOTION_CONCURRENCY", "").strip()
+
     cmd = [
         npx,
         "remotion",
@@ -269,11 +288,16 @@ async def render_code_to_video(
         "CodeVideo",
         out_video,
         f"--props={str(temp_props_path)}",
+        f"--config={str(config_file)}",
         f"--frames=0-{duration_in_frames - 1}",
+        "--image-format=jpeg",
+        "--jpeg-quality=85",
         "--bundle-cache",
         "--x264-preset=veryfast",
         gl_flag,
     ]
+    if concurrency:
+        cmd.append(f"--concurrency={concurrency}")
     if sys.platform != "win32":
         cmd.append("--enable-multiprocess-on-linux")
 
@@ -352,7 +376,7 @@ async def render_code_to_video(
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
                 elapsed = round(time.time() - start_time, 2)
 
                 if proc.returncode != 0:
@@ -389,7 +413,7 @@ async def render_code_to_video(
                 await proc.wait()
             except Exception:
                 pass
-        return {"success": False, "error": f"Render timed out after {timeout} seconds"}
+        return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
     except Exception as e:
         if proc:
             try:

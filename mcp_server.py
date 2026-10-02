@@ -107,6 +107,7 @@ if _transport_security is not None:
 async def create_video_from_spec(
     spec: dict[str, Any],
     name: str = "",
+    timeout: int | None = None,
 ) -> str:
     """依据声明式 JSON Spec 一键构建并渲染专业级 Remotion 动画视频，自动返回视频播放链接与封面截图。
 
@@ -125,8 +126,16 @@ async def create_video_from_spec(
                 * CodeBlock: title, filename, code, language, isTyping(bool)
                 * TextOverlay: headline, subheadline, style(badge/quote/minimal)
                 * EndScreen: title, channel, cta, social: ["..."]
+                * ComparisonCard: title, subtitle, left, right, vsBadge
+                * MetricCard: title, subtitle, metrics
+                * Timeline: title, subtitle, items
+                * FeatureList: title, subtitle, columns, features
+                * QuoteCard: quote, author, title, avatar
+              - audioUrl / bgm: 可选背景音乐链接或路径
+              - audioVolume: 背景音乐音量 (0.0 - 1.0, 默认 0.3)
               - transition: {"type": "fade" | "slide" | "none", "durationFrames": 12}
         name: 可选文件名标识，留空则自动生成唯一 ID
+        timeout: 可选渲染超时秒数（留空则默认使用全局环境变量 RENDER_TIMEOUT，默认为 120 秒）
 
     Returns:
         JSON 格式渲染结果，包含视频 URL、封面图 URL 与 Markdown 展示排版
@@ -138,6 +147,7 @@ async def create_video_from_spec(
         spec=spec,
         item_id=item_id,
         output_dir=OUTPUT_DIR,
+        timeout=timeout,
     )
 
     if not render_res.get("success"):
@@ -205,6 +215,7 @@ async def create_video_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
+    timeout: int | None = None,
 ) -> str:
     """使用原生 React / Remotion 源码多文件字典构建并渲染视频。
 
@@ -218,6 +229,7 @@ async def create_video_from_code(
         width: 视频宽度像素，默认 1920
         height: 视频高度像素，默认 1080
         input_props: 可选传递给入口组件的 React props 字典
+        timeout: 可选渲染超时秒数（留空则默认使用全局环境变量 RENDER_TIMEOUT，默认为 120 秒）
 
     Returns:
         JSON 格式渲染结果，包含视频 URL、封面图 URL 与 Markdown 展示排版
@@ -249,6 +261,7 @@ async def create_video_from_code(
         width=width,
         height=height,
         input_props=input_props,
+        timeout=timeout,
     )
 
     if not render_res.get("success"):

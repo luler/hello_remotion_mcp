@@ -166,6 +166,10 @@ uvicorn app:app --host 0.0.0.0 --port 48001 --reload
 | `REMOTION_OUTPUT_DIR` | `/app/data/output` | MP4 视频与封面图存储路径 |
 | `REMOTION_STORE_DIR` | `/app/data/store` | 视频资产元数据索引路径 |
 | `PUPPETEER_EXECUTABLE_PATH` | `/usr/bin/chromium` | 无头浏览器可执行路径（Linux/Docker） |
+| `RENDER_TIMEOUT` | `120` | 单个视频渲染超时秒数（可通过环境变量全局配置，也支持 MCP 工具参数单独指定） |
+| `REMOTION_CONCURRENCY` | `50%` | Remotion 内部并发渲染标签数（支持百分比如 `50%` 或具体数值如 `8`） |
+| `MAX_CONCURRENT_RENDERS` | `2` | 异步信号量允许的最大并行渲染任务数（防止多客户端打爆 CPU/内存） |
+
 
 ---
 
