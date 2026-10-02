@@ -32,9 +32,9 @@ export const RemotionRoot: React.FC = () => {
           },
         } as SpecCompositionProps}
         calculateMetadata={({ props }) => {
-          const spec = props?.spec || {};
-          const fps = spec.fps || 30;
-          const platform = (spec.platform || "").toLowerCase();
+          const spec = (props?.spec || {}) as Record<string, any>;
+          const fps = Number(spec.fps) || 30;
+          const platform = String(spec.platform || "").toLowerCase();
 
           let width = 1920;
           let height = 1080;
@@ -53,7 +53,7 @@ export const RemotionRoot: React.FC = () => {
           let totalFrames = 0;
           if (spec.scenes && Array.isArray(spec.scenes) && spec.scenes.length > 0) {
             for (const s of spec.scenes) {
-              totalFrames += s.durationInFrames || Math.round((Number(s.duration) || 3.5) * fps);
+              totalFrames += Number(s.durationInFrames) || Math.round((Number(s.duration) || 3.5) * fps);
             }
           } else {
             totalFrames = 150;
@@ -80,7 +80,7 @@ export const RemotionRoot: React.FC = () => {
           inputProps: {},
         } as CodeWrapperProps}
         calculateMetadata={({ props }) => {
-          const p = props?.inputProps || {};
+          const p = (props?.inputProps || {}) as Record<string, any>;
           return {
             durationInFrames: Number(p.durationInFrames) || 150,
             fps: Number(p.fps) || 30,

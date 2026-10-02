@@ -1,12 +1,19 @@
 # remotion-studio
 
-基于 **FastAPI + Remotion 4.x + MCP** 的新一代智能视频生成与动效服务。
+基于 **FastAPI + Remotion 4.0.532 (Latest) + MCP** 的企业级通用视频生成与动效引擎。
 
-深度整合两种核心视频制作模式：
-1. **声明式场景模式 (`create_video_from_spec`)**：输入 JSON Spec，系统自动结合 8 大专业主题色彩、全平台画幅自适应与内置动效组件库（标题、图表、代码打字机、引言、片尾等），一键出片；
-2. **自由式代码模式 (`create_video_from_code`)**：直接提供 React / Remotion TSX 源码多文件字典，支持 Remotion 4.x 核心物理弹簧与基于帧的动画全能力。
+深度融合并吸收社区主流 Remotion 实践精髓，提供两种核心视频制作模式：
+1. **声明式场景模式 (`create_video_from_spec`)**：输入 JSON Spec，系统自动结合 8 大专业主题色彩、全平台画幅自适应与 10 大商业级动画组件库（标题、数据图表、代码打字机、竞品对比、KPI看板、时间轴路线图、特性网格、引言、片尾等），支持背景音乐（BGM）与自动音量淡出，一键出片；
+2. **自由式代码模式 (`create_video_from_code`)**：直接提供 React / Remotion TSX 源码多文件字典，预装并全面开放 Remotion 4.x 官方全生态扩展包（`@remotion/shapes`, `@remotion/paths`, `@remotion/media-utils`, `@remotion/google-fonts`, `@remotion/transitions`, `lucide-react`），支持任何自定义高难度物理动效；
+3. **企业级高并发与稳定性架构**：
+   - **Tini Init 守护**：容器级自动回收无头 Chromium 僵尸进程，彻底杜绝进程泄露；
+   - **2GB 共享内存 (`shm_size: 2gb`)**：彻底避免高分辨率/多光栅线程下 Chromium 崩溃；
+   - **异步信号量限流**：后台渲染与视频点播完全解耦，播放/下载采用 HTTP 206 异步流式分段加载，绝对不堵塞 MCP 工具响应与多客户端并发；
+   - **智能编译加速**：Remotion `--bundle-cache` 与 `--x264-preset=veryfast` 结合，构建与编码提速 30%~50%；
+   - **智能入口桥接**：自由代码模式支持任意入口文件名与默认/具名组件导出，自动生成转接适配层。
 
 生成后自动返回 **可在线播放与分段加载的视频 URL、直接下载链接、逐帧提取的高清封面图与排版良好的 Markdown**，并内置现代化管理后台（SPA）。
+
 
 ---
 
@@ -92,7 +99,32 @@ uvicorn app:app --host 0.0.0.0 --port 48001 --reload
 
 ---
 
+## 🧩 10 大声明式商业场景组件
+
+`create_video_from_spec` 内置涵盖主流视频制作场景的动画组件：
+
+| 组件名称 (`type`) | 典型用途 | 核心入参 (Props) |
+| --- | --- | --- |
+| `TitleScene` | 片头震撼定场与章节过渡 | `title`, `subtitle`, `badge`, `variant(gradient/centered/left/bold)`, `animation` |
+| `BarChart` | 垂直数据柱状图升活动效 | `title`, `subtitle`, `data: [{label, value}]` |
+| `HorizontalBarChart` | 横向排行榜与进度条对比 | `title`, `subtitle`, `data: [{label, value}]` |
+| `PieChart` / `DonutChart` | 环形/饼图占比分布看板 | `title`, `subtitle`, `data: [{label, value}]` |
+| `LineChart` | 高质感发光折线走势图 | `title`, `subtitle`, `data: [{label, value}]` |
+| `CodeBlock` | macOS 风格代码打字机视窗 | `title`, `filename`, `language`, `code`, `isTyping` |
+| `ComparisonCard` | 双栏竞品对比、VS、Before-After | `title`, `subtitle`, `vsBadge`, `left: {...}`, `right: {...}` |
+| `MetricCard` | 商业 KPI 大数字滚动卡片与增减标识 | `title`, `subtitle`, `metrics: [{label, value, prefix, suffix, change, changeLabel, isPositive, helperText}]` |
+| `Timeline` | 里程碑演进与霓虹发光节点路线图 | `title`, `subtitle`, `items: [{date, title, description, badge, active}]` |
+| `FeatureList` | 核心特性矩阵卡片与矢量图标徽章 | `title`, `subtitle`, `columns`, `features: [{title, description, badge, icon}]` |
+| `QuoteCard` | 权威引述、名言与客户证言卡片 | `quote`, `author`, `title`, `avatar`, `company` |
+| `TextOverlay` | 核心观点大字报与金句加粗高亮 | `headline`, `subheadline`, `style(badge/quote/minimal)` |
+| `EndScreen` | 片尾关注号召、订阅呼吸按钮 | `title`, `channel`, `cta`, `social` |
+
+> 🎵 **背景音乐 (BGM)**：在 Spec 根节点设置 `audioUrl`（或 `bgm`）及可选的 `audioVolume: 0.3`，系统自动完成音频循环混音并在视频结尾前自动平滑淡出。
+
+---
+
 ## 🎨 8 大主题色彩与画幅体系
+
 
 ### 色彩主题
 - `tech`: 前沿科技（深板岩蓝底、电光青与冷光蓝高亮）

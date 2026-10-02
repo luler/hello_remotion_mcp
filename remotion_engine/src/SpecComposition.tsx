@@ -1,6 +1,7 @@
 import React from "react";
 import {
   AbsoluteFill,
+  Audio,
   Sequence,
   interpolate,
   useCurrentFrame,
@@ -15,6 +16,11 @@ import { LineChart } from "./components/LineChart";
 import { CodeBlock } from "./components/CodeBlock";
 import { TextOverlay } from "./components/TextOverlay";
 import { EndScreen } from "./components/EndScreen";
+import { ComparisonCard } from "./components/ComparisonCard";
+import { MetricCard } from "./components/MetricCard";
+import { Timeline } from "./components/Timeline";
+import { FeatureList } from "./components/FeatureList";
+import { QuoteCard } from "./components/QuoteCard";
 
 export interface SceneConfig {
   type: string;
@@ -28,6 +34,9 @@ export interface SpecData {
   theme?: string;
   platform?: string;
   fps?: number;
+  audioUrl?: string;
+  bgm?: string;
+  audioVolume?: number;
   scenes?: SceneConfig[];
   transition?: {
     type?: "fade" | "slide" | "none";
@@ -62,10 +71,31 @@ export const SpecComposition: React.FC<SpecCompositionProps> = ({ spec = {} }) =
   const auraX2 = Math.cos(frame * 0.015) * 150 + width * 0.7;
   const auraY2 = Math.sin(frame * 0.015) * 100 + height * 0.6;
 
+  const totalFrames = scenes.reduce(
+    (acc, s) => acc + (s.durationInFrames || Math.round((s.duration || 3.5) * fps)),
+    0
+  );
+
   let currentStartFrame = 0;
 
   return (
     <AbsoluteFill style={{ backgroundColor: theme.bg, overflow: "hidden" }}>
+      {/* Background Audio / BGM */}
+      {(spec.audioUrl || spec.bgm) && (
+        <Audio
+          src={spec.audioUrl || spec.bgm || ""}
+          volume={(f) => {
+            const vol = spec.audioVolume ?? 0.6;
+            return interpolate(
+              f,
+              [Math.max(0, totalFrames - 30), totalFrames],
+              [vol, 0],
+              { extrapolateLeft: "clamp", extrapolateRight: "clamp" }
+            );
+          }}
+        />
+      )}
+
       {/* Dynamic Ambient Aura Lighting */}
       <div
         style={{
@@ -237,6 +267,50 @@ const SceneWrapper: React.FC<{
           channel={scene.channel}
           cta={scene.cta}
           social={scene.social}
+          theme={theme}
+        />
+      )}
+      {(type === "comparisoncard" || type === "comparison") && (
+        <ComparisonCard
+          title={scene.title}
+          subtitle={scene.subtitle}
+          left={scene.left}
+          right={scene.right}
+          theme={theme}
+        />
+      )}
+      {(type === "metriccard" || type === "counter" || type === "metrics") && (
+        <MetricCard
+          title={scene.title}
+          subtitle={scene.subtitle}
+          metrics={scene.metrics || scene.data}
+          theme={theme}
+        />
+      )}
+      {(type === "timeline" || type === "roadmap") && (
+        <Timeline
+          title={scene.title}
+          subtitle={scene.subtitle}
+          items={scene.items || scene.milestones}
+          theme={theme}
+        />
+      )}
+      {(type === "featurelist" || type === "features") && (
+        <FeatureList
+          title={scene.title}
+          subtitle={scene.subtitle}
+          features={scene.features || scene.items}
+          columns={scene.columns}
+          theme={theme}
+        />
+      )}
+      {(type === "quotecard" || type === "quote") && (
+        <QuoteCard
+          quote={scene.quote || scene.title}
+          author={scene.author}
+          role={scene.role}
+          company={scene.company}
+          badge={scene.badge}
           theme={theme}
         />
       )}

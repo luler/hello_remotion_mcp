@@ -13,4 +13,7 @@ data/output/*
 !data/output/.gitkeep
 data/store/*
 !data/store/.gitkeep
+data/public/*
+!data/public/.gitkeep
 .env
+

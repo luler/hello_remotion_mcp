@@ -3,16 +3,20 @@ export interface ThemeColors {
   label: string;
   bg: string;
   card_bg: string;
+  surface: string;
   primary: string;
   secondary: string;
   accent: string;
   text: string;
   text_muted: string;
+  muted: string;
   border: string;
   glow: string;
 }
 
-export const THEMES: Record<string, ThemeColors> = {
+export type ThemeConfig = ThemeColors;
+
+const RAW_THEMES = {
   tech: {
     name: "tech",
     label: "前沿科技 (Tech Slate)",
@@ -118,6 +122,17 @@ export const THEMES: Record<string, ThemeColors> = {
     glow: "rgba(34, 197, 94, 0.45)",
   },
 };
+
+export const THEMES: Record<string, ThemeColors> = Object.fromEntries(
+  Object.entries(RAW_THEMES).map(([k, v]) => [
+    k,
+    {
+      ...v,
+      surface: v.card_bg,
+      muted: v.text_muted,
+    },
+  ])
+);
 
 export function getTheme(themeName?: string): ThemeColors {
   if (themeName && THEMES[themeName.toLowerCase()]) {

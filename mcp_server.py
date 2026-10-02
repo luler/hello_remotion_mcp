@@ -352,6 +352,31 @@ async def get_video_guide() -> str:
                 "desc": "片尾号召关注、订阅呼吸按钮与社交卡片",
                 "props": ["title", "channel", "cta", "social", "duration"],
             },
+            {
+                "type": "ComparisonCard",
+                "desc": "双栏竞品/方案对比、VS卡片与优劣势要点清单",
+                "props": ["title", "subtitle", "left: {title, subtitle, badge, items, isPositive}", "right: {title, subtitle, badge, items, isPositive}", "vsBadge", "duration"],
+            },
+            {
+                "type": "MetricCard",
+                "desc": "商业经营指标与 KPI 大数字滚动卡片看板（支持增减标识与说明）",
+                "props": ["title", "subtitle", "metrics: [{label, value, prefix, suffix, change, changeLabel, isPositive, helperText}]", "duration"],
+            },
+            {
+                "type": "Timeline",
+                "desc": "里程碑时间轴演进图与霓虹发光节点路线图",
+                "props": ["title", "subtitle", "items: [{date, title, description, badge, active}]", "duration"],
+            },
+            {
+                "type": "FeatureList",
+                "desc": "产品核心功能矩阵卡片与矢量图标徽章展示",
+                "props": ["title", "subtitle", "columns", "features: [{title, description, badge, icon}]", "duration"],
+            },
+            {
+                "type": "QuoteCard",
+                "desc": "权威引述、金句推荐与客户证言卡片",
+                "props": ["quote", "author", "title", "avatar", "company", "duration"],
+            },
         ],
         "workflow_rules": rules.RULE_INDEX,
     }, ensure_ascii=False, indent=2)

@@ -12,11 +12,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# 安装系统基础依赖：Node.js 20, Chromium, FFmpeg, 中文字体
+# 安装系统基础依赖：Node.js 20, Chromium, FFmpeg, 中文字体, tini (PID 1 僵尸进程回收)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     chromium \
     ffmpeg \
+    tini \
     fonts-noto-cjk \
     fonts-wqy-zenhei \
     fonts-wqy-microhei \
@@ -54,5 +55,7 @@ EXPOSE 48001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT:-48001}/healthz || exit 1
 
-# 启动服务
+# 容器入口与进程管理（tini 回收僵尸 Chromium 进程）
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "exec uvicorn app:app --host 0.0.0.0 --port ${PORT:-48001}"]
+

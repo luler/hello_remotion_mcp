@@ -7,8 +7,13 @@
 RULE_INDEX = """# Remotion Studio MCP — 视频生成与创作指南
 
 本服务提供两种 Remotion 视频创作模式：
-1. **声明式场景模式 (`create_video_from_spec`)**：输入 JSON Spec，系统自动应用设计系统、主题配色与高质感动画组件（TitleScene, BarChart, CodeBlock, EndScreen等），开箱即用。
-2. **自由式代码模式 (`create_video_from_code`)**：直接提供 React / Remotion TSX 源码多文件字典，享受 Remotion 4.x 的完整能力。
+1. **声明式场景模式 (`create_video_from_spec`)**：输入 JSON Spec，系统自动应用设计系统、主题配色与高质感动画组件，开箱即用：
+   - 基础场景：`TitleScene` (大标题片头), `TextOverlay` (金句观点), `EndScreen` (片尾订阅)
+   - 数据图表：`BarChart` (竖向柱状图), `HorizontalBarChart` (横向排行榜), `PieChart` (环形占比图), `LineChart` (折线走势图)
+   - 代码视窗：`CodeBlock` (macOS 风格代码打字机)
+   - 商业与产品场景：`ComparisonCard` (对比/VS/优劣势分析), `MetricCard` (KPI 核心指标看板与动态滚数), `Timeline` (里程碑路线图与发光连线), `FeatureList` (特性矩阵与图标徽章), `QuoteCard` (名言引述与客户证言)
+   - 背景音乐：支持 `spec.audioUrl` (或 `spec.bgm`) 与 `spec.audioVolume`，自动在结尾淡出
+2. **自由式代码模式 (`create_video_from_code`)**：直接提供 React / Remotion TSX 源码多文件字典，享受 Remotion 4.0.532 最新全生态能力。
 
 ## 可用规则工具 (Rule Tools)
 可按需调用以下规则获取具体知识：
@@ -28,16 +33,21 @@ RULE_INDEX = """# Remotion Studio MCP — 视频生成与创作指南
 RULE_REACT_CODE = """# Remotion React 代码编写规范
 
 ## 核心约定
-1. 入口文件默认为 `/src/Video.tsx`，必须 `export default function Video(props)`。
-2. 支持导入标准依赖：
-   - `remotion` (例如 `AbsoluteFill`, `useCurrentFrame`, `useVideoConfig`, `spring`, `interpolate`, `Sequence`)
-   - `@remotion/transitions` 与 `@remotion/transitions/fade`, `slide`, `wipe`
+1. 入口文件默认为 `/src/Video.tsx`（若为其他文件名，系统会自动生成桥接代理），支持 `export default function Video(props)` 或 `export const Video = ...` 命名导出。
+2. 完整预装并支持导入 Remotion 4.x 核心生态与常用库：
+   - `remotion` (例如 `AbsoluteFill`, `useCurrentFrame`, `useVideoConfig`, `spring`, `interpolate`, `Sequence`, `Audio`, `staticFile`)
+   - `@remotion/transitions` 与 `@remotion/transitions/fade`, `slide`, `wipe`, `flip`
+   - `@remotion/shapes` (`Circle`, `Rect`, `Triangle`, `Star`, `Pie` 矢量几何图形)
+   - `@remotion/paths` (SVG 路径形变与演变动效)
+   - `@remotion/media-utils` (音频分析与元数据解析)
+   - `@remotion/google-fonts` (动态字体按需引入)
    - `react`, `react/jsx-runtime`
-   - `lucide-react` 图标库
+   - `lucide-react` (全部矢量图标组件库)
 3. 严禁使用 CSS keyframe 动画或 CSS transitions 控制视频动效！所有动画必须基于 `useCurrentFrame()` 与 `spring` / `interpolate` 计算。
 4. 建议使用绝对定位与 `AbsoluteFill` 布局，保证在不同分辨率下比例稳定。
 
 ## 代码示例
+
 ```tsx
 import React from "react";
 import { AbsoluteFill, useCurrentFrame, spring, interpolate, useVideoConfig } from "remotion";

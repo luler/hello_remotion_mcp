@@ -6,6 +6,7 @@ services:
     image: remotion-studio:latest
     container_name: remotion-studio
     restart: unless-stopped
+    shm_size: '2gb'
     ports:
       - "${PORT:-48001}:48001"
     environment:
@@ -16,10 +17,12 @@ services:
       - REMOTION_OUTPUT_DIR=/app/data/output
       - REMOTION_STORE_DIR=/app/data/store
       - REMOTION_ENGINE_DIR=/app/remotion_engine
+      - REMOTION_PUBLIC_DIR=/app/remotion_engine/public
       - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
     volumes:
       - ./data:/app/data
+      - ./data/public:/app/remotion_engine/public
       - ./app.py:/app/app.py
       - ./mcp_server.py:/app/mcp_server.py
       - ./web_admin.py:/app/web_admin.py
@@ -27,6 +30,9 @@ services:
       - ./store.py:/app/store.py
       - ./themes.py:/app/themes.py
       - ./rules.py:/app/rules.py
+      - ./remotion_engine/src:/app/remotion_engine/src
+      - ./remotion_engine/renderer.py:/app/remotion_engine/renderer.py
+      - ./remotion_engine/remotion.config.ts:/app/remotion_engine/remotion.config.ts
     healthcheck:
       test: [ "CMD-SHELL", "curl -f http://localhost:48001/healthz || exit 1" ]
       interval: 30s

@@ -143,8 +143,16 @@ async def render_spec_to_video(
         "SpecVideo",
         out_video,
         f"--props={str(temp_props_path)}",
+        "--bundle-cache",
+        "--x264-preset=veryfast",
         gl_flag,
     ]
+    if sys.platform != "win32":
+        cmd.append("--enable-multiprocess-on-linux")
+
+    public_dir = os.environ.get("REMOTION_PUBLIC_DIR") or str(ENGINE_DIR / "public")
+    if os.path.exists(public_dir):
+        cmd.append(f"--public-dir={public_dir}")
 
     chromium_path = os.environ.get("PUPPETEER_EXECUTABLE_PATH")
     if chromium_path and os.path.exists(chromium_path):
@@ -152,6 +160,7 @@ async def render_spec_to_video(
 
     start_time = time.time()
     sem = get_render_semaphore()
+    proc: asyncio.subprocess.Process | None = None
     try:
         async with sem:
             proc = await asyncio.create_subprocess_exec(
@@ -191,8 +200,20 @@ async def render_spec_to_video(
             "render_time_seconds": elapsed,
         }
     except asyncio.TimeoutError:
+        if proc:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "error": f"Render timed out after {timeout} seconds"}
     except Exception as e:
+        if proc:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):
@@ -249,8 +270,16 @@ async def render_code_to_video(
         out_video,
         f"--props={str(temp_props_path)}",
         f"--frames=0-{duration_in_frames - 1}",
+        "--bundle-cache",
+        "--x264-preset=veryfast",
         gl_flag,
     ]
+    if sys.platform != "win32":
+        cmd.append("--enable-multiprocess-on-linux")
+
+    public_dir = os.environ.get("REMOTION_PUBLIC_DIR") or str(ENGINE_DIR / "public")
+    if os.path.exists(public_dir):
+        cmd.append(f"--public-dir={public_dir}")
 
     chromium_path = os.environ.get("PUPPETEER_EXECUTABLE_PATH")
     if chromium_path and os.path.exists(chromium_path):
@@ -259,11 +288,20 @@ async def render_code_to_video(
     start_time = time.time()
     sem = get_render_semaphore()
     code_lock = get_code_render_lock()
+    proc: asyncio.subprocess.Process | None = None
 
     try:
         async with sem:
             async with code_lock:
                 USER_SRC_DIR.mkdir(parents=True, exist_ok=True)
+                # 清除历史遗留文件以防模块冲突
+                for old_item in USER_SRC_DIR.glob("*"):
+                    if old_item.is_file():
+                        try:
+                            old_item.unlink()
+                        except OSError:
+                            pass
+
                 # 规范化并写入用户代码文件到 src/user 目录下
                 for rel_path, code in files.items():
                     clean_path = rel_path.lstrip("/\\")
@@ -275,6 +313,38 @@ async def render_code_to_video(
                     target_file.parent.mkdir(parents=True, exist_ok=True)
                     with open(target_file, "w", encoding="utf-8") as f:
                         f.write(code)
+
+                # 智能入口桥接：确保 CodeWrapper 能稳定引入 Video.tsx
+                video_exists = any((USER_SRC_DIR / f"Video{ext}").exists() for ext in [".tsx", ".jsx", ".ts", ".js"])
+                if not video_exists:
+                    entry_clean = entry_file.lstrip("/\\")
+                    if entry_clean.startswith("src/"):
+                        entry_clean = entry_clean[4:]
+                    if entry_clean.startswith("user/"):
+                        entry_clean = entry_clean[5:]
+
+                    entry_path = USER_SRC_DIR / entry_clean
+                    if not entry_path.exists():
+                        for cand_name in files.keys():
+                            cand = cand_name.lstrip("/\\")
+                            if cand.startswith("src/"):
+                                cand = cand[4:]
+                            if cand.startswith("user/"):
+                                cand = cand[5:]
+                            if (USER_SRC_DIR / cand).exists():
+                                entry_clean = cand
+                                entry_path = USER_SRC_DIR / cand
+                                break
+
+                    if entry_path.exists():
+                        stem = entry_clean.rsplit(".", 1)[0].replace("\\", "/")
+                        bridge_code = (
+                            f'import EntryComponent from "./{stem}";\n'
+                            f'export * from "./{stem}";\n'
+                            f'export default EntryComponent;\n'
+                        )
+                        with open(USER_SRC_DIR / "Video.tsx", "w", encoding="utf-8") as f:
+                            f.write(bridge_code)
 
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
@@ -313,8 +383,20 @@ async def render_code_to_video(
             "render_time_seconds": elapsed,
         }
     except asyncio.TimeoutError:
+        if proc:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "error": f"Render timed out after {timeout} seconds"}
     except Exception as e:
+        if proc:
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception:
+                pass
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):
@@ -322,3 +404,4 @@ async def render_code_to_video(
                 os.remove(temp_props_path)
             except OSError:
                 pass
+
