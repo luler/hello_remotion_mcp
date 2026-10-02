@@ -127,6 +127,7 @@ def get_admin_html() -> str:
     .btn {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 0.45rem;
       padding: 0.45rem 0.9rem;
       border-radius: var(--radius);
@@ -136,6 +137,18 @@ def get_admin_html() -> str:
       border: 1px solid transparent;
       transition: all 0.2s ease;
       text-decoration: none;
+      white-space: nowrap;
+      word-break: keep-all;
+      flex-shrink: 0;
+      line-height: 1.2;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .btn-sm {
+      padding: 0.35rem 0.7rem;
+      font-size: 0.8rem;
+      border-radius: var(--radius-sm);
+      gap: 0.35rem;
     }
     .btn-secondary {
       background: var(--surface-subtle);
@@ -155,13 +168,14 @@ def get_admin_html() -> str:
       box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
     }
     .btn-danger {
-      background: rgba(239, 68, 68, 0.15);
-      border-color: rgba(239, 68, 68, 0.4);
-      color: #f87171;
+      background: rgba(239, 68, 68, 0.16);
+      border-color: rgba(239, 68, 68, 0.45);
+      color: #fca5a5;
     }
     .btn-danger:hover {
       background: var(--danger);
       color: #fff;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
     }
     .btn-refresh .refresh-icon {
       display: inline-block;
@@ -216,42 +230,21 @@ def get_admin_html() -> str:
       gap: 0.65rem;
       flex-wrap: wrap;
     }
-    .select-all-label {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text);
-      cursor: pointer;
-      user-select: none;
-      padding: 0.35rem 0.65rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      transition: all 0.2s ease;
-    }
-    .select-all-label:hover {
-      border-color: var(--border-focus);
-      background: var(--surface-hover);
-    }
-    .select-all-label input[type="checkbox"] {
-      width: 17px;
-      height: 17px;
-      accent-color: var(--primary-light);
-      cursor: pointer;
-    }
     .selection-badge {
-      font-size: 0.82rem;
+      font-size: 0.8rem;
       color: var(--primary-light);
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(56, 189, 248, 0.3);
-      padding: 0.32rem 0.75rem;
+      padding: 0.35rem 0.75rem;
       border-radius: 9999px;
       font-weight: 600;
       display: none;
       align-items: center;
       gap: 0.3rem;
+      white-space: nowrap;
+      word-break: keep-all;
+      flex-shrink: 0;
+      line-height: 1.2;
     }
     .page-size-selector {
       display: flex;
@@ -660,6 +653,140 @@ def get_admin_html() -> str:
     @keyframes toastIn {
       from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* =========================================================================
+       移动端自适应响应式优化 (Mobile & Tablet Responsiveness)
+       ========================================================================= */
+    @media (max-width: 768px) {
+      header {
+        padding: 0.75rem 1rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+      }
+      .brand-title {
+        font-size: 1.05rem;
+      }
+      .brand-subtitle {
+        font-size: 0.7rem;
+      }
+      .header-actions {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .search-box {
+        flex: 1;
+        min-width: 0;
+      }
+      .search-input {
+        width: 100%;
+        padding: 0.45rem 0.75rem 0.45rem 2rem;
+        font-size: 0.8rem;
+      }
+
+      .stat-bar {
+        padding: 0.5rem 1rem;
+        gap: 0.85rem;
+        overflow-x: auto;
+        white-space: nowrap;
+        font-size: 0.76rem;
+        -webkit-overflow-scrolling: touch;
+      }
+      .stat-pill {
+        flex-shrink: 0;
+      }
+
+      .action-toolbar {
+        padding: 0.65rem 1rem;
+        position: static;
+        gap: 0.65rem;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .action-toolbar .toolbar-group {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      main {
+        padding: 1rem 0.85rem;
+      }
+      .video-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      .pagination-bar {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+        padding: 1rem 0;
+      }
+      .pagination-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.25rem;
+      }
+      .page-btn {
+        min-width: 32px;
+        height: 32px;
+        font-size: 0.78rem;
+        padding: 0 0.45rem;
+      }
+
+      .modal-backdrop {
+        padding: 0.5rem;
+      }
+      .modal-dialog {
+        width: 100%;
+        max-height: 96vh;
+        border-radius: 12px;
+      }
+      .modal-header {
+        padding: 0.75rem 1rem;
+      }
+      .modal-title {
+        font-size: 0.95rem;
+      }
+      .modal-content {
+        padding: 0.85rem;
+      }
+      .modal-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.6rem;
+        padding: 0.75rem 1rem;
+      }
+      .modal-footer > div {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+      }
+      .modal-footer .btn {
+        flex: 1;
+        text-align: center;
+      }
+      .card-actions {
+        flex-wrap: wrap;
+      }
+      .toast-box {
+        bottom: 12px;
+        right: 12px;
+        left: 12px;
+      }
+      .toast {
+        text-align: center;
+        font-size: 0.8rem;
+        padding: 0.6rem 1rem;
+      }
     }
   </style>
 </head>
