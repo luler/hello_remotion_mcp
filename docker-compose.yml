@@ -27,8 +27,9 @@ services:
 
       # ----------------- 2. 渲染性能与超时控制（最大安全加速阈值） -----------------
       - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，统一后台硬管控）
-      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-75%} # Remotion 内部并发渲染标签数（默认利用 75% CPU 核心，最大安全压榨渲染吞吐）
+      - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-85%} # Remotion 内部并发渲染标签数（提高至 85% CPU 核心，压榨最大多核并行加速）
       - X264_PRESET=${X264_PRESET:-superfast}           # x264 视频压缩算法档位（superfast 比 veryfast 提速 30~40%，兼顾极高质量）
+
       - MAX_CONCURRENT_RENDERS=${MAX_CONCURRENT_RENDERS:-2} # 异步信号量最大并发渲染任务数（防止多客户端并发把 CPU/内存打满）
 
 

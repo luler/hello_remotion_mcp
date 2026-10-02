@@ -25,7 +25,7 @@ os.makedirs(STORE_DIR, exist_ok=True)
 
 # 渲染性能与超时控制配置（可通过环境变量动态调整）
 RENDER_TIMEOUT = int(os.environ.get("RENDER_TIMEOUT", "600"))  # 单个视频渲染超时秒数，默认 600 秒（10分钟）
-REMOTION_CONCURRENCY = os.environ.get("REMOTION_CONCURRENCY", "75%").strip()  # Remotion 内部并发标签数 (默认利用 75% CPU 核心，最大化吞吐)
+REMOTION_CONCURRENCY = os.environ.get("REMOTION_CONCURRENCY", "85%").strip()  # Remotion 内部并发标签数 (默认利用 85% CPU 核心，最大化吞吐)
 X264_PRESET = os.environ.get("X264_PRESET", "superfast").strip()  # 视频编码预设速度 (superfast 提速 30%~40%)
 MAX_CONCURRENT_RENDERS = int(os.environ.get("MAX_CONCURRENT_RENDERS", "2"))  # 异步信号量最大并发任务数
 
