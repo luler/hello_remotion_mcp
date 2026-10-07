@@ -131,6 +131,44 @@ def get_render_timeout() -> int:
     return int(os.environ.get("RENDER_TIMEOUT", "600"))
 
 
+def clean_partial_outputs(*paths: str | Path | None) -> None:
+    """清理因渲染中断、超时或失败留下的残缺临时视频/封面文件。"""
+    for p in paths:
+        if not p:
+            continue
+        try:
+            p_obj = Path(p)
+            if p_obj.exists() and p_obj.is_file():
+                p_obj.unlink()
+        except OSError:
+            pass
+
+
+def clean_system_temp_cache(max_age_seconds: int = 1800) -> int:
+    """清理系统 /tmp 下残留的旧 Remotion Webpack 缓存与 Chromium 临时目录。"""
+    if sys.platform == "win32":
+        return 0
+    cleaned_count = 0
+    tmp_dir = Path("/tmp")
+    if not tmp_dir.exists():
+        return 0
+    now = time.time()
+    patterns = ["remotion-webpack-bundle-*", "org.chromium.Chromium.*"]
+    for pat in patterns:
+        for p in tmp_dir.glob(pat):
+            try:
+                mtime = p.stat().st_mtime
+                if now - mtime > max_age_seconds:
+                    if p.is_dir():
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        p.unlink(missing_ok=True)
+                    cleaned_count += 1
+            except Exception:
+                pass
+    return cleaned_count
+
+
 def _kill_proc_tree(proc: asyncio.subprocess.Process | None) -> None:
     """彻底终止进程树及其派生的所有 Chromium/FFmpeg/Node 子进程。"""
     if not proc or proc.returncode is not None:
@@ -255,6 +293,7 @@ async def render_spec_to_video(
             elapsed = round(time.time() - start_time, 2)
 
             if proc.returncode != 0:
+                clean_partial_outputs(out_video, out_poster)
                 err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
                 logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
                 return {
@@ -283,12 +322,15 @@ async def render_spec_to_video(
         }
     except asyncio.TimeoutError:
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
     except (asyncio.CancelledError, KeyboardInterrupt):
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         raise
     except Exception as e:
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):
@@ -448,6 +490,7 @@ async def render_code_to_video(
                 elapsed = round(time.time() - start_time, 2)
 
                 if proc.returncode != 0:
+                    clean_partial_outputs(out_video, out_poster)
                     err_msg = stderr.decode("utf-8", errors="replace") or stdout.decode("utf-8", errors="replace")
                     logger.error(f"Remotion render failed ({proc.returncode}): {err_msg}")
                     return {
@@ -476,12 +519,15 @@ async def render_code_to_video(
         }
     except asyncio.TimeoutError:
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
     except (asyncio.CancelledError, KeyboardInterrupt):
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         raise
     except Exception as e:
         _kill_proc_tree(proc)
+        clean_partial_outputs(out_video, out_poster)
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):

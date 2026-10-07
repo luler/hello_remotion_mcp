@@ -831,6 +831,9 @@ def get_admin_html() -> str:
       <button class="btn btn-danger btn-sm" id="batchDeleteBtn" style="display:none;" onclick="batchDeleteSelected()">
         🗑️ 批量删除 (<span id="batchDeleteCount">0</span>)
       </button>
+      <button class="btn btn-secondary btn-sm" onclick="cleanOrphansAndTemp()" title="清理磁盘孤儿文件、历史无效任务与构建缓存">
+        🧹 深度清理垃圾
+      </button>
     </div>
     <div class="toolbar-group">
       <div class="page-size-selector">
@@ -1283,6 +1286,26 @@ def get_admin_html() -> str:
       const id = currentModalItem.id;
       closePlayerModal();
       await deleteSingle(id);
+    }
+
+    async function cleanOrphansAndTemp() {
+      if (!confirm("确定扫描并清理所有未登记的残留孤儿文件、历史无效任务与构建缓存吗？")) return;
+      const key = getAuthKey();
+      const headers = { "Content-Type": "application/json" };
+      if (key) headers["Authorization"] = `Bearer ${key}`;
+
+      try {
+        const res = await fetch("/api/admin/cleanup", { method: "POST", headers });
+        const d = await res.json();
+        if (d.ok) {
+          alert(`🎉 清理成功！\n- 清理孤儿文件: ${d.cleaned_orphan_files_count} 个\n- 释放磁盘空间: ${d.freed_mb} MB\n- 清理系统临时缓存: ${d.cleaned_system_temp_count} 处\n- 清理历史无效任务: ${d.cleaned_history_tasks_count} 条`);
+          await loadFiles();
+        } else {
+          alert("清理失败: " + (d.error || d.detail || "未知错误"));
+        }
+      } catch (e) {
+        alert("清理请求失败: " + e.message);
+      }
     }
 
     function openAuthModal() {

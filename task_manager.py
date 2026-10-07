@@ -139,6 +139,43 @@ class TaskManager:
             await asyncio.sleep(0.5)
         return self.get_task(task_id) or {}
 
+    def delete_task(self, task_id: str) -> bool:
+        """从任务列表中彻底删除指定任务记录。"""
+        with self._lock:
+            if task_id in self._tasks:
+                del self._tasks[task_id]
+                self._save()
+                return True
+        return False
+
+    def delete_by_item_id(self, item_id: str) -> int:
+        """根据关联的视频 item_id 查找并清理对应的任务记录。"""
+        with self._lock:
+            to_del = [tid for tid, t in self._tasks.items() if t.get("item_id") == item_id or tid == item_id]
+            if to_del:
+                for tid in to_del:
+                    self._tasks.pop(tid, None)
+                self._save()
+                return len(to_del)
+        return 0
+
+    def clean_history_tasks(self, keep_latest: int = 50) -> int:
+        """保留最新的 N 条任务记录，清理更早的历史记录（不影响正在运行的任务）。"""
+        with self._lock:
+            items = list(self._tasks.items())
+            if len(items) <= keep_latest:
+                return 0
+            items.sort(key=lambda x: x[1].get("created_at_ts", 0), reverse=True)
+            to_remove = items[keep_latest:]
+            removed_count = 0
+            for tid, _ in to_remove:
+                if self._tasks[tid].get("status") not in ("queued", "rendering"):
+                    self._tasks.pop(tid, None)
+                    removed_count += 1
+            if removed_count > 0:
+                self._save()
+            return removed_count
+
     def create_spec_task(
         self,
         spec: dict[str, Any],

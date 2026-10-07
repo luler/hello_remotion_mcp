@@ -23,7 +23,7 @@ import config
 import mcp_server as M
 import rules
 import shotcraft_kb
-from remotion_engine.renderer import render_code_to_video, render_spec_to_video
+from remotion_engine.renderer import clean_system_temp_cache, render_code_to_video, render_spec_to_video
 from themes import PLATFORMS, SAMPLE_SPECS, THEMES
 from web_admin import get_admin_html
 
@@ -289,7 +289,7 @@ def api_admin_delete(
     authorization: str | None = Header(None),
     auth_key: str | None = Query(None),
 ):
-    """批量彻底删除视频文件及关联封面图。"""
+    """批量彻底删除视频文件、关联封面图及对应的后台任务记录。"""
     if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
@@ -308,6 +308,8 @@ def api_admin_delete(
                 except OSError:
                     pass
             M.STORE.delete(rec["id"])
+            # 同步清理 tasks.json 中关联的任务记录
+            M.TASKS.delete_by_item_id(rec["id"])
             deleted += 1
         else:
             # 容错直接按文件名删除
@@ -324,9 +326,65 @@ def api_admin_delete(
                 except OSError:
                     pass
             M.STORE.delete(vid)
+            M.TASKS.delete_by_item_id(vid)
             deleted += 1
 
     return {"ok": True, "deleted_count": deleted}
+
+
+@app.post("/api/admin/cleanup")
+def api_admin_cleanup(
+    authorization: str | None = Header(None),
+    auth_key: str | None = Query(None),
+):
+    """扫描并彻底清理未登记的孤儿视频/临时文件、已失效任务记录与系统 /tmp 缓存碎片。"""
+    if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # 1. 查出已登记的所有有效视频与封面文件集合
+    items, _ = M.STORE.list(limit=0)
+    registered_files = set()
+    for it in items:
+        if it.get("path"):
+            registered_files.add(os.path.basename(it["path"]))
+        if it.get("poster_path"):
+            registered_files.add(os.path.basename(it["poster_path"]))
+        registered_files.add(f"{it['id']}.mp4")
+        registered_files.add(f"{it['id']}.jpg")
+    registered_files.add(".gitkeep")
+
+    # 2. 遍历 OUTPUT_DIR 清理所有未登记的残留孤儿/临时文件
+    cleaned_orphan_files = []
+    freed_bytes = 0
+    if os.path.exists(M.OUTPUT_DIR):
+        for fname in os.listdir(M.OUTPUT_DIR):
+            if fname not in registered_files:
+                fpath = os.path.join(M.OUTPUT_DIR, fname)
+                if os.path.isfile(fpath):
+                    try:
+                        sz = os.path.getsize(fpath)
+                        os.remove(fpath)
+                        cleaned_orphan_files.append(fname)
+                        freed_bytes += sz
+                    except OSError:
+                        pass
+
+    # 3. 清理系统 /tmp 下的旧 Webpack bundle 缓存与 Chromium profile
+    cleaned_tmp_count = clean_system_temp_cache(max_age_seconds=1800)
+
+    # 4. 清理旧任务记录（保留最新 30 条）
+    cleaned_tasks_count = M.TASKS.clean_history_tasks(keep_latest=30)
+
+    return {
+        "ok": True,
+        "cleaned_orphan_files_count": len(cleaned_orphan_files),
+        "cleaned_orphan_files": cleaned_orphan_files,
+        "freed_bytes": freed_bytes,
+        "freed_mb": round(freed_bytes / (1024 * 1024), 2),
+        "cleaned_system_temp_count": cleaned_tmp_count,
+        "cleaned_history_tasks_count": cleaned_tasks_count,
+        "message": f"清理完成：成功删除 {len(cleaned_orphan_files)} 个残留孤儿文件，释放 {round(freed_bytes / (1024 * 1024), 2)} MB 磁盘空间，清理 {cleaned_tmp_count} 处系统临时缓存。",
+    }
 
 
 # ==================== 视频点播流与下载接口 ====================
