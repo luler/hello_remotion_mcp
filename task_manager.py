@@ -63,8 +63,14 @@ class TaskManager:
 
     def list_tasks(self, limit: int = 30) -> list[dict[str, Any]]:
         with self._lock:
-            items = list(self._tasks.values())
+            items = [dict(t) for t in self._tasks.values()]
         items.sort(key=lambda x: x.get("created_at_ts", 0), reverse=True)
+        now = time.time()
+        for res in items:
+            status = res.get("status")
+            if status in ("queued", "rendering"):
+                started_at_ts = res.get("started_at_ts") or res.get("created_at_ts", now)
+                res["elapsed_seconds"] = round(now - started_at_ts, 1)
         return items[:limit]
 
     def create_spec_task(

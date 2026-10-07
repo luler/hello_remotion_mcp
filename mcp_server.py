@@ -93,7 +93,11 @@ _server_kwargs = {
         "   - 可随时调用 `list_shotcraft_categories`, `search_shotcraft_shots`, `get_shotcraft_recipe` 检索电影感参数与动效拆解。\n\n"
         "【长视频制作与输出强制铁律】\n"
         "1. 严禁碎剪：遇到篇幅较长的科普、汇报、政策解读或商业方案，必须作为一个完整视频合成（包含 5~10 个连续场景），通过异步任务 `submit_video_task_from_spec` 提交后轮询，绝不可拆成碎片！\n"
-        "2. 最终回复强制铁律：在最终给用户的回复中，你【必须直接原样输出 user_display_markdown】！"
+        "2. 中断重连与状态寻查：若网络闪断、客户端超时，或用户在后续对话中询问‘做好了吗’、‘视频进度如何’、‘刚才的视频呢’时：\n"
+        "   - 优先通过 `get_video_task_status(task_id)` 查询状态；\n"
+        "   - 若未提供任务 ID，调用 `get_video_task_status()`（留空自动查最新）或 `list_video_tasks()` 获取最近任务；\n"
+        "   - 若已完成直接输出 `user_display_markdown` 视频卡片；若仍在渲染中则汇报进度与耗时，严禁在未确认后台状态前盲目重新发起渲染！\n"
+        "3. 最终回复强制铁律：在最终给用户的回复中，你【必须直接原样输出 user_display_markdown】！"
         "必须确保封面图通过 `![封面](poster_url)` 渲染大图展示，并展示在线播放与下载的超链接，绝对严禁折叠或擅自省略图片与链接！"
     ),
 }
@@ -230,19 +234,24 @@ async def submit_video_task_from_code(
 
 
 @server.tool()
-async def get_video_task_status(task_id: str) -> str:
-    """根据任务 ID 查询视频渲染进度与最终生成结果。
+async def get_video_task_status(task_id: str = "") -> str:
+    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询最近一次提交的任务。
 
     Args:
-        task_id: 提交任务时返回的 task_id (如 task_spec_...)
+        task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前最新的任务
 
     Returns:
         JSON 格式任务状态。当 status 为 'completed' 时，包含完整视频 URL、封面图 URL 与 user_display_markdown。
     """
     if not task_id:
-        return json.dumps({"ok": False, "error": "task_id is required"}, ensure_ascii=False)
+        tasks = TASKS.list_tasks(limit=1)
+        if not tasks:
+            return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
+        task = tasks[0]
+        task_id = task["task_id"]
+    else:
+        task = TASKS.get_task(task_id)
 
-    task = TASKS.get_task(task_id)
     if not task:
         return json.dumps({"ok": False, "error": f"Task not found: {task_id}"}, ensure_ascii=False)
 
@@ -287,6 +296,44 @@ async def get_video_task_status(task_id: str) -> str:
             "estimated_render_seconds": est,
             "message": f"任务正在渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。请稍等 30~60 秒后再次调用 get_video_task_status 查询。",
         }, ensure_ascii=False, indent=2)
+
+
+@server.tool()
+async def list_video_tasks(limit: int = 5) -> str:
+    """获取最近提交的视频渲染任务列表及实时状态（支持断线重连、找回未完成或刚完成的任务）。
+
+    Args:
+        limit: 返回条数（默认 5）
+
+    Returns:
+        JSON 格式任务列表，包含各任务的 task_id、标题、状态(queued/rendering/completed/failed)、已耗时、成片链接
+    """
+    tasks = TASKS.list_tasks(limit=limit)
+    res = []
+    for t in tasks:
+        item = {
+            "task_id": t.get("task_id"),
+            "title": t.get("title"),
+            "mode": t.get("mode"),
+            "status": t.get("status"),
+            "created_at": t.get("created_at"),
+            "elapsed_seconds": t.get("elapsed_seconds", 0.0),
+            "estimated_render_seconds": t.get("estimated_render_seconds", 30.0),
+        }
+        if t.get("status") == "completed" and t.get("result"):
+            item["video_url"] = t["result"].get("video_url")
+            item["poster_url"] = t["result"].get("poster_url")
+            item["duration_seconds"] = t["result"].get("duration_seconds")
+        elif t.get("status") == "failed":
+            item["error"] = t.get("error")
+        res.append(item)
+
+    return json.dumps({
+        "ok": True,
+        "total": len(res),
+        "tasks": res,
+    }, ensure_ascii=False, indent=2)
+
 
 
 @server.tool()
