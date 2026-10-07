@@ -169,25 +169,23 @@ async def cancel_video_task(
 async def submit_video_task_from_spec(
     spec: dict[str, Any],
     name: str = "",
-    wait_seconds: float = 35.0,
+    wait_seconds: float = 300.0,
     force: bool = False,
     timeout: int | None = None,
     client_id: str = "",
 ) -> str:
-    """声明式 Spec 视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截、多客户端隔离与强制覆盖）。
+    """声明式 Spec 视频生成（长轮询就地返回成片或平滑转后台，支持多客户端隔离与并发互斥保护，最大支持渲染 30 分钟）。
 
     执行机制：
     1. 互斥保护与多客户端隔离：同一客户端若已有任务正在渲染且 force=False，系统会自动拦截并提醒用户；不同客户端（不同 client_id）互不影响；若 force=True 则直接终止旧任务。
-    2. 智能等待：在 wait_seconds（默认 35 秒，适配客户端 60s 代理超时）内等待：
-       - 若在时限内完成（如 1~3 个短镜头），直接在本次返回成片与 Markdown 卡片；
-       - 若超时仍未完（如多镜头长视频），立即平滑返回 task_id，绝不触发客户端 Gateway Timeout，由客户端继续轮询。
+    2. 智能等待与长轮询（默认 300 秒）：在此期间若渲染完成，直接在本次调用中返回最终成片与 Markdown 播放卡片（极大减少大模型往返 Token 消耗）；若超时未完则平滑返回 task_id，由客户端继续查询。
 
     Args:
         spec: 视频规格定义，必须包含 scenes 场景列表
         name: 可选文件名标识，留空则自动生成唯一 ID
-        wait_seconds: 初始等待秒数（默认 35.0 秒；设为 0 则纯异步秒级返回 task_id）
+        wait_seconds: 初始长轮询等待秒数（默认 300.0 秒就地等待成片；设为 0 则纯异步秒级返回 task_id）
         force: 若当前已有其他任务在渲染，是否强制终止旧任务并开启新任务（默认 False）
-        timeout: 渲染总超时上限（秒）
+        timeout: 渲染总超时上限（秒，默认 1800 秒）
         client_id: 客户端唯一标识符（用于多客户端独立任务隔离）
     """
     cid = resolve_client_id(client_id)
@@ -274,12 +272,12 @@ async def submit_video_task_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
-    wait_seconds: float = 35.0,
+    wait_seconds: float = 300.0,
     force: bool = False,
     timeout: int | None = None,
     client_id: str = "",
 ) -> str:
-    """React 源码模式视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截、多客户端隔离与强制覆盖）。"""
+    """React 源码模式视频生成（长轮询就地返回成片或平滑转后台，支持并发冲突拦截与多客户端隔离，最大支持渲染 30 分钟）。"""
     file_map: dict[str, str] = {}
     if isinstance(files, str):
         try:
@@ -519,16 +517,24 @@ async def list_video_tasks(limit: int = 5, client_id: str = "") -> str:
 async def create_video_from_spec(
     spec: dict[str, Any],
     name: str = "",
+    wait_seconds: float = 300.0,
     client_id: str = "",
 ) -> str:
-    """依据声明式 JSON Spec 一键构建并渲染视频（内置 35 秒智能自适应防超时保护与多客户端隔离）。
+    """依据声明式 JSON Spec 一键构建并渲染视频（支持就地返回成片与后台长轮询，最大支持渲染 30 分钟）。
 
-    短视频在 35 秒内直接就地返回成片；长视频若超过 35 秒则自动平滑返回 task_id，绝不触发客户端 Gateway Timeout。
+    Args:
+        spec: 视频规格定义，必须包含 scenes 场景列表
+        name: 可选文件名标识，留空则自动生成唯一 ID
+        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型 Token 消耗）
+        client_id: 客户端唯一标识符（可选，用于多客户端环境隔离）
+
+    Returns:
+        JSON 格式渲染结果或任务状态。
     """
     return await submit_video_task_from_spec(
         spec=spec,
         name=name,
-        wait_seconds=35.0,
+        wait_seconds=wait_seconds,
         force=False,
         client_id=client_id,
     )
@@ -544,9 +550,26 @@ async def create_video_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
+    wait_seconds: float = 300.0,
     client_id: str = "",
 ) -> str:
-    """使用原生 React / Remotion 源码多文件字典构建并渲染视频（内置 35 秒智能自适应防超时保护与多客户端隔离）。"""
+    """使用原生 React / Remotion 源码多文件字典构建并渲染视频（支持就地返回成片与后台长轮询，最大支持渲染 30 分钟）。
+
+    Args:
+        files: React 源码文件字典（例如 {"/src/Video.tsx": "..."}）
+        title: 视频标题
+        entry_file: 入口文件路径（默认 /src/Video.tsx）
+        duration_in_frames: 视频总帧数（默认 150 帧）
+        fps: 视频帧率（默认 30）
+        width: 视频宽度像素（默认 1920）
+        height: 视频高度像素（默认 1080）
+        input_props: 传入组件的自定义属性字典（可选）
+        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间渲染完成立即就地返回成片）
+        client_id: 客户端唯一标识符（可选，用于多客户端环境隔离）
+
+    Returns:
+        JSON 格式渲染结果或任务状态。
+    """
     return await submit_video_task_from_code(
         files=files,
         title=title,
@@ -556,7 +579,7 @@ async def create_video_from_code(
         width=width,
         height=height,
         input_props=input_props,
-        wait_seconds=35.0,
+        wait_seconds=wait_seconds,
         force=False,
         client_id=client_id,
     )
