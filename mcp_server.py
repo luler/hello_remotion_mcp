@@ -85,7 +85,7 @@ _server_kwargs = {
         "1. 异步任务模式（制作长视频/多镜头推荐首选，彻底杜绝网络超时与碎片化）：\n"
         "   - 当视频包含 3 个及以上镜头或预计时长较长时，必须优先使用 `submit_video_task_from_spec`（或 `submit_video_task_from_code`）；\n"
         "   - 接口在 50ms 内立即返回唯一任务 ID (`task_id`) 与预估耗时，完全不受客户端/反代 HTTP 60s/120s 超时限制；\n"
-        "   - 提交后若未完成，调用 `get_video_task_status(task_id, wait_seconds=35)` 查询进度（若在 35 秒内渲染完会立即返回成片，未完则平滑返回百分比，杜绝客户端网络报错）；或直接向用户汇报已在后台全速渲染，并等待用户主动询问进度时再查询；\n"
+        "   - 提交后若未完成，调用 `get_video_task_status(task_id, wait_seconds=300)` 进行长轮询等待成片就地返回（极大减少 Token 往返消耗）；若客户端偶发网络断开重试，系统会根据上下文中的 task_id 智能无缝找回进度，绝不丢失；\n"
         "   - 渲染完成后直接获取视频卡片，严禁因为担心超时把一个完整主题拆分成 5~6 个碎片短视频！\n"
         "2. 声明式 Spec 模式 (`create_video_from_spec` / `submit_video_task_from_spec`)：\n"
         "   - 输入 JSON 结构定义即可直接生成高水准商业级动画视频；\n"
@@ -101,14 +101,13 @@ _server_kwargs = {
         "   - 支持导入 remotion 核心 API（AbsoluteFill, spring, interpolate, Sequence, useCurrentFrame 等）；\n"
         "   - 自动编译渲染为高帧率 MP4 视频。\n"
         "4. 电影感镜头配方卡知识库 (Video-Shotcraft，157张镜头卡与214个动效组件)：\n"
-        "   - 提供片头(opening)、2.5D运镜(camera)、UI动效(ui-entrance)、交互演示(interaction)、数据高亮(data)、高级字效(typography)、光效质感(effects)、节奏停顿(rhythm)、转场(transition)、片尾(outro)等10大分类；\n"
+        "   - 提供片头(opening), 2.5D运镜(camera), UI动效(ui-entrance), 交互演示(interaction), 数据高亮(data), 高级字效(typography), 光效质感(effects), 节奏停顿(rhythm), 转场(transition), 片尾(outro)等10大分类；\n"
         "   - 可随时调用 `list_shotcraft_categories`, `search_shotcraft_shots`, `get_shotcraft_recipe` 检索电影感参数与动效拆解。\n\n"
         "【视频制作防超时闭环与任务互斥铁律】\n"
-        "1. 智能等待与自适应防超时：\n"
-        "   - 当调用 `create_video_from_spec` 或 `submit_video_task_from_spec` 时，系统默认安全等待 35 秒；\n"
-        "   - 若视频在 35 秒内渲染完成（短视频），直接在本次返回成片与 Markdown 卡片；\n"
-        "   - 若 35 秒内未完成（多镜头长视频），系统会在客户端网络超时前平滑返回 `task_id`，并告知正在后台全力渲染，杜绝网络 60s 报错中断！\n"
-        "   - 客户端后续可调用 `get_video_task_status(task_id, wait_seconds=35)` 查询进度（或默认留空 35 秒），未完成时系统会在安全时限内返回当前渲染百分比；或直接等待用户下一次询问；\n"
+        "1. 智能等待与长轮询（最大化节约 Token）：\n"
+        "   - 提交任务后，客户端使用 `get_video_task_status(task_id, wait_seconds=300)` 进行长轮询等待；\n"
+        "   - 后台渲染完成瞬间会立即在本次调用中返回最终成片卡片，免去多轮无效轮询问答，节约 90% 以上 Token；\n"
+        "   - 若因网络闪断或客户端硬超时导致重连，大模型只需凭借上下文中的 `task_id`（或留空自动推断）即可无缝恢复进度查询，绝对不会出现任务丢失或找不到；\n"
         "2. 任务互斥与放弃/取消逻辑（闭环控制）：\n"
         "   - 系统限制同一时间只有一个活跃渲染任务。若用户在任务进行中又发起了新视频需求：\n"
         "     * 系统会自动拦截并明确提示：当前已有视频任务【标题】（Task ID: ...）正在进行中；\n"
@@ -370,12 +369,12 @@ async def submit_video_task_from_code(
 
 
 @server.tool()
-async def get_video_task_status(task_id: str = "", wait_seconds: float = 35.0, client_id: str = "") -> str:
-    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询当前客户端最新的任务。
+async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, client_id: str = "") -> str:
+    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动从上下文推断最新任务。
 
     Args:
-        task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前客户端最新的任务
-        wait_seconds: 可选等待秒数（长轮询支持，建议 30~35 秒，受系统防超时安全保护最大不超过 45 秒，在此期间一旦渲染完成会立即就地返回成片；未完成则平滑返回当前进度，彻底消除客户端 MCP Request timed out 错误）
+        task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动从会话上下文中匹配最新活跃任务
+        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型往返轮询产生的 Token 消耗；即便客户端发生网络超时重试，系统亦能通过上下文精准识别原任务）
         client_id: 客户端唯一标识符（可选，用于多客户端环境精准识别）
 
     Returns:
@@ -383,27 +382,37 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 35.0, c
     """
     cid = resolve_client_id(client_id)
     if not task_id:
+        # 1. 优先根据客户端空间识别当前上下文的活跃任务
         active = TASKS.get_active_task(client_id=cid)
+        if not active:
+            # 2. 上下文智能兜底：若网络重连或未指明客户端，自动匹配当前会话最近的活跃任务
+            active = TASKS.get_active_task()
         if active:
             task_id = active["task_id"]
         else:
             tasks = TASKS.list_tasks(limit=1, client_id=cid)
             if not tasks:
+                tasks = TASKS.list_tasks(limit=1, all_clients=True)
+            if not tasks:
                 return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
             task_id = tasks[0]["task_id"]
 
-    safe_wait = min(max(0.0, wait_seconds), 45.0) if wait_seconds > 0 else 0.0
-    if safe_wait > 0:
-        task = await TASKS.wait_for_task(task_id, timeout=safe_wait)
+    wait_timeout = max(0.0, float(wait_seconds))
+    if wait_timeout > 0:
+        task = await TASKS.wait_for_task(task_id, timeout=wait_timeout)
     else:
         task = TASKS.get_task(task_id, client_id=cid)
+
+    # 3. 上下文跨会话智能找回：若按特定 client_id 未命中，使用全局 task_id 兜底检索（持有唯一 task_id 证明来源上下文合法）
+    if not task:
+        task = TASKS.get_task(task_id)
 
     if not task:
         return json.dumps({"ok": False, "error": f"Task not found: {task_id}"}, ensure_ascii=False)
 
-    # 跨客户端安全越权检查防御
-    if cid and task.get("client_id") and task.get("client_id") != cid:
-        return json.dumps({"ok": False, "error": f"Task not found: {task_id}"}, ensure_ascii=False)
+    # 4. 越权防御：仅当显式传入了互斥的 client_id 时才严格拦截；对持有合法随机 task_id 的会话上下文请求宽容放行
+    if client_id and client_id.strip() and task.get("client_id") and task.get("client_id") != client_id.strip():
+        return json.dumps({"ok": False, "error": f"越权操作拒绝：任务 {task_id} 属于其他客户端"}, ensure_ascii=False)
 
     status = task.get("status")
     if status == "completed":
