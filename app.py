@@ -141,7 +141,7 @@ class BaseUrlMiddleware:
                     client_id = qs["cid"][0].strip()
 
             if not client_id:
-                for h_name in (b"x-client-id", b"client-id", b"mcp-session-id", b"x-session-id"):
+                for h_name in (b"x-client-id", b"client-id"):
                     val = headers.get(h_name, b"").decode("latin-1").strip()
                     if val:
                         client_id = val
