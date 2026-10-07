@@ -127,8 +127,8 @@ async def extract_poster(video_path: str, poster_path: str, time_offset: float =
 
 
 def get_render_timeout() -> int:
-    """获取单个渲染任务超时秒数（优先读取环境变量 RENDER_TIMEOUT，默认 600 秒/10分钟）。"""
-    return int(os.environ.get("RENDER_TIMEOUT", "600"))
+    """获取单个渲染任务超时秒数（优先读取环境变量 RENDER_TIMEOUT，默认 1800 秒/30分钟）。"""
+    return int(os.environ.get("RENDER_TIMEOUT", "1800"))
 
 
 def clean_partial_outputs(*paths: str | Path | None) -> None:
@@ -193,7 +193,7 @@ async def render_spec_to_video(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """依据声明式 JSON Spec 渲染 MP4 视频（受并发信号量平滑调控）。"""
-    # 统一使用后台配置的最大渲染超时秒数（默认 600 秒），防止前端或 LLM 误传入过小数值导致频繁渲染中断
+    # 统一使用后台配置的最大渲染超时秒数（默认 1800 秒/30分钟），防止前端或 LLM 误传入过小数值导致频繁渲染中断
     effective_timeout = get_render_timeout()
     os.makedirs(output_dir, exist_ok=True)
     out_video = os.path.join(output_dir, f"{item_id}.mp4")

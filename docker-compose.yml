@@ -26,7 +26,7 @@ services:
       - AUTH_KEY=${AUTH_KEY:-}                          # 访问安全密钥（留空免密放行；非空时 /mcp 与 /admin 后台均需凭证访问）
 
       # ----------------- 2. 渲染性能与超时控制（黄金安全加速阈值） -----------------
-      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-600}           # 单个视频渲染最大超时秒数（默认 600 秒/10分钟，统一后台硬管控）
+      - RENDER_TIMEOUT=${RENDER_TIMEOUT:-1800}          # 单个视频渲染最大超时秒数（默认 1800 秒/30分钟，统一后台硬管控）
       - REMOTION_CONCURRENCY=${REMOTION_CONCURRENCY:-50%} # Remotion 内部并发渲染标签数（严禁超过 75% 或 85%，否则瞬间启动十几个浏览器导致端口连接拒绝崩溃）
       - X264_PRESET=${X264_PRESET:-superfast}           # x264 视频压缩算法档位（superfast 比 veryfast 提速 30~40%，兼顾极高质量）
 
