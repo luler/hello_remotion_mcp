@@ -18,7 +18,8 @@ export interface ComparisonSide {
   badge?: string;
   subtitle?: string;
   highlight?: boolean;
-  items: (string | ComparisonCardItem)[];
+  isPositive?: boolean;
+  items?: (string | ComparisonCardItem)[];
 }
 
 export interface ComparisonCardProps {
@@ -26,6 +27,7 @@ export interface ComparisonCardProps {
   subtitle?: string;
   left?: ComparisonSide;
   right?: ComparisonSide;
+  vsBadge?: string;
   theme: ThemeConfig;
 }
 
@@ -43,6 +45,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
     highlight: true,
     items: ["代码即视频，精准到帧", "秒级自动化云端渲染", "配置驱动，一键换肤", "支持无限规模批量生成"],
   },
+  vsBadge,
   theme,
 }) => {
   const frame = useCurrentFrame();
@@ -131,6 +134,28 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
           fps={fps}
           frame={frame}
         />
+        {vsBadge && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              alignSelf: "center",
+              width: "3.2rem",
+              height: "3.2rem",
+              borderRadius: "50%",
+              background: `${theme.primary}26`,
+              border: `2px solid ${theme.primary}`,
+              color: theme.primary,
+              fontWeight: 900,
+              fontSize: "1.1rem",
+              boxShadow: `0 0 20px ${theme.primary}55`,
+              flexShrink: 0,
+            }}
+          >
+            {vsBadge}
+          </div>
+        )}
         <SideCard
           side={right}
           theme={theme}
@@ -152,13 +177,15 @@ const SideCard: React.FC<{
   fps: number;
   frame: number;
 }> = ({ side, theme, isLeft, delay, fps, frame }) => {
-  const isHighlight = Boolean(side.highlight);
+  const isHighlight = Boolean(side.highlight || side.isPositive);
 
   const bg = isHighlight
     ? `linear-gradient(145deg, ${theme.surface}f5, ${theme.primary}22)`
     : theme.surface;
   const borderColor = isHighlight ? theme.primary : theme.border;
   const glow = isHighlight ? `0 12px 40px ${theme.primary}33` : "none";
+
+  const items = side.items || [];
 
   return (
     <div
@@ -204,7 +231,7 @@ const SideCard: React.FC<{
 
       {/* 列表项 */}
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-        {side.items.map((item, idx) => {
+        {items.map((item, idx) => {
           const text = typeof item === "string" ? item : item.text;
           const positive = typeof item === "string" ? !isLeft : (item.positive !== false);
 

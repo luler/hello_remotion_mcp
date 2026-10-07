@@ -7,6 +7,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { ThemeConfig } from "../themes";
+import { resolveLucideIcon } from "./iconHelper";
 
 export interface FeatureItem {
   icon?: string;
@@ -124,7 +125,14 @@ export const FeatureList: React.FC<FeatureListProps> = ({
                     flexShrink: 0,
                   }}
                 >
-                  {f.icon}
+                  {(() => {
+                    const Icon = resolveLucideIcon(f.icon);
+                    return Icon ? (
+                      <Icon size={28} color={theme.primary} strokeWidth={2} />
+                    ) : (
+                      f.icon
+                    );
+                  })()}
                 </div>
               )}
               <div style={{ flex: 1 }}>

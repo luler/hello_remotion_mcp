@@ -7,6 +7,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { ThemeConfig } from "../themes";
+import { resolveLucideIcon } from "./iconHelper";
 
 export interface MetricItem {
   label: string;
@@ -14,8 +15,12 @@ export interface MetricItem {
   prefix?: string;
   suffix?: string;
   change?: string;
+  changeLabel?: string;
   changeType?: "up" | "down" | "neutral";
+  isPositive?: boolean;
   description?: string;
+  helperText?: string;
+  icon?: string;
 }
 
 export interface MetricCardProps {
@@ -131,8 +136,14 @@ const SingleMetric: React.FC<{
     }
   }
 
+  const changeVal = metric.change || metric.changeLabel;
+  const descVal = metric.description || metric.helperText;
+  const computedChangeType =
+    metric.changeType ||
+    (metric.isPositive === true ? "up" : metric.isPositive === false ? "down" : "neutral");
+
   const changeColor =
-    metric.changeType === "down" ? "#ef4444" : metric.changeType === "up" ? theme.accent : theme.muted;
+    computedChangeType === "down" ? "#ef4444" : computedChangeType === "up" ? theme.accent : theme.muted;
 
   return (
     <div
@@ -163,8 +174,18 @@ const SingleMetric: React.FC<{
       />
 
       <div>
-        <div style={{ fontSize: "1.15rem", color: theme.muted, fontWeight: 500, marginBottom: "1rem" }}>
-          {metric.label}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+          <span style={{ fontSize: "1.15rem", color: theme.muted, fontWeight: 500 }}>
+            {metric.label}
+          </span>
+          {metric.icon && (
+            <div style={{ color: theme.primary, display: "flex", alignItems: "center" }}>
+              {(() => {
+                const Icon = resolveLucideIcon(metric.icon);
+                return Icon ? <Icon size={20} color={theme.primary} strokeWidth={2} /> : metric.icon;
+              })()}
+            </div>
+          )}
         </div>
         <div
           style={{
@@ -193,7 +214,7 @@ const SingleMetric: React.FC<{
       </div>
 
       <div style={{ marginTop: "1.6rem" }}>
-        {metric.change && (
+        {changeVal && (
           <span
             style={{
               display: "inline-block",
@@ -206,12 +227,12 @@ const SingleMetric: React.FC<{
               marginBottom: "0.5rem",
             }}
           >
-            {metric.change}
+            {changeVal}
           </span>
         )}
-        {metric.description && (
+        {descVal && (
           <p style={{ fontSize: "0.95rem", color: theme.muted, margin: "0.4rem 0 0 0", lineHeight: 1.4 }}>
-            {metric.description}
+            {descVal}
           </p>
         )}
       </div>

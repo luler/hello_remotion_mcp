@@ -7,10 +7,13 @@ import {
   useVideoConfig,
 } from "remotion";
 import { ThemeConfig } from "../themes";
+import { resolveLucideIcon } from "./iconHelper";
 
 export interface TimelineItem {
   date?: string;
   tag?: string;
+  badge?: string;
+  icon?: string;
   title: string;
   description?: string;
   active?: boolean;
@@ -160,7 +163,17 @@ export const Timeline: React.FC<TimelineProps> = ({
                   alignSelf: isWide ? "center" : "flex-start",
                 }}
               >
-                {idx + 1}
+                {(() => {
+                  if (it.icon) {
+                    const Icon = resolveLucideIcon(it.icon);
+                    return Icon ? (
+                      <Icon size={18} color={isActive ? "#000" : theme.muted} strokeWidth={2.5} />
+                    ) : (
+                      it.icon
+                    );
+                  }
+                  return idx + 1;
+                })()}
               </div>
 
               {/* 内容卡片 */}
@@ -177,7 +190,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                   <span style={{ fontSize: "0.85rem", fontWeight: 700, color: theme.primary }}>
                     {it.date}
                   </span>
-                  {it.tag && (
+                  {(it.badge || it.tag) && (
                     <span
                       style={{
                         fontSize: "0.75rem",
@@ -188,7 +201,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                         fontWeight: 700,
                       }}
                     >
-                      {it.tag}
+                      {it.badge || it.tag}
                     </span>
                   )}
                 </div>

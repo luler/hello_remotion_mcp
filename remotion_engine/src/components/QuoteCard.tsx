@@ -7,6 +7,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { ThemeConfig } from "../themes";
+import { resolveLucideIcon } from "./iconHelper";
 
 export interface QuoteCardProps {
   quote?: string;
@@ -14,6 +15,7 @@ export interface QuoteCardProps {
   role?: string;
   company?: string;
   badge?: string;
+  avatar?: string;
   theme: ThemeConfig;
 }
 
@@ -23,6 +25,7 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
   role = "首席技术专家 · Principal Engineer",
   company = "Antigravity Lab",
   badge = "VISION & MISSION",
+  avatar,
   theme,
 }) => {
   const frame = useCurrentFrame();
@@ -134,9 +137,20 @@ export const QuoteCard: React.FC<QuoteCardProps> = ({
                 justifyContent: "center",
                 boxShadow: `0 0 16px ${theme.primary}88`,
                 flexShrink: 0,
+                overflow: "hidden",
               }}
             >
-              {author.slice(0, 1)}
+              {(() => {
+                if (avatar) {
+                  if (avatar.startsWith("http") || avatar.startsWith("/") || avatar.startsWith("data:")) {
+                    return <img src={avatar} alt={author} style={{ width: "100%", height: "100%", objectFit: "cover" }} />;
+                  }
+                  const Icon = resolveLucideIcon(avatar);
+                  if (Icon) return <Icon size={24} color="#fff" strokeWidth={2} />;
+                  return avatar;
+                }
+                return author ? author.slice(0, 1) : "“";
+              })()}
             </div>
             <div>
               <div style={{ fontSize: "1.35rem", fontWeight: 700, color: theme.text }}>

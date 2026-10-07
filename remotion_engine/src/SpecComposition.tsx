@@ -219,11 +219,11 @@ const SceneWrapper: React.FC<{
     }
   }
 
-  const type = (scene.type || "").toLowerCase();
+  const type = (scene.type || "").toLowerCase().replace(/[-_\s]+/g, "");
 
   return (
     <AbsoluteFill style={{ opacity, transform }}>
-      {type === "titlescene" && (
+      {(type === "titlescene" || type === "title" || type === "intro") && (
         <TitleScene
           title={scene.title || "Remotion Video"}
           subtitle={scene.subtitle}
@@ -233,19 +233,19 @@ const SceneWrapper: React.FC<{
           theme={theme}
         />
       )}
-      {type === "barchart" && (
+      {(type === "barchart" || type === "bar") && (
         <BarChart title={scene.title} data={scene.data || []} theme={theme} />
       )}
-      {type === "horizontalbarchart" && (
+      {(type === "horizontalbarchart" || type === "hbar" || type === "ranking" || type === "rank") && (
         <HorizontalBarChart title={scene.title} data={scene.data || []} theme={theme} />
       )}
-      {(type === "piechart" || type === "donutchart") && (
+      {(type === "piechart" || type === "donutchart" || type === "pie" || type === "donut") && (
         <PieChart title={scene.title} data={scene.data || []} theme={theme} />
       )}
-      {type === "linechart" && (
+      {(type === "linechart" || type === "line" || type === "trend") && (
         <LineChart title={scene.title} data={scene.data || []} theme={theme} />
       )}
-      {type === "codeblock" && (
+      {(type === "codeblock" || type === "code") && (
         <CodeBlock
           title={scene.title}
           filename={scene.filename}
@@ -255,7 +255,7 @@ const SceneWrapper: React.FC<{
           theme={theme}
         />
       )}
-      {type === "textoverlay" && (
+      {(type === "textoverlay" || type === "text") && (
         <TextOverlay
           headline={scene.headline || scene.title || ""}
           subheadline={scene.subheadline || scene.subtitle}
@@ -263,7 +263,7 @@ const SceneWrapper: React.FC<{
           theme={theme}
         />
       )}
-      {type === "endscreen" && (
+      {(type === "endscreen" || type === "end" || type === "outro") && (
         <EndScreen
           title={scene.title}
           channel={scene.channel}
@@ -272,16 +272,17 @@ const SceneWrapper: React.FC<{
           theme={theme}
         />
       )}
-      {(type === "comparisoncard" || type === "comparison") && (
+      {(type === "comparisoncard" || type === "comparison" || type === "vs") && (
         <ComparisonCard
           title={scene.title}
           subtitle={scene.subtitle}
           left={scene.left}
           right={scene.right}
+          vsBadge={scene.vsBadge}
           theme={theme}
         />
       )}
-      {(type === "metriccard" || type === "counter" || type === "metrics") && (
+      {(type === "metriccard" || type === "metrics" || type === "metric" || type === "counter") && (
         <MetricCard
           title={scene.title}
           subtitle={scene.subtitle}
@@ -297,7 +298,7 @@ const SceneWrapper: React.FC<{
           theme={theme}
         />
       )}
-      {(type === "featurelist" || type === "features") && (
+      {(type === "featurelist" || type === "features" || type === "feature") && (
         <FeatureList
           title={scene.title}
           subtitle={scene.subtitle}
@@ -310,9 +311,10 @@ const SceneWrapper: React.FC<{
         <QuoteCard
           quote={scene.quote || scene.title}
           author={scene.author}
-          role={scene.role}
+          role={scene.role || scene.title}
           company={scene.company}
           badge={scene.badge}
+          avatar={scene.avatar}
           theme={theme}
         />
       )}
