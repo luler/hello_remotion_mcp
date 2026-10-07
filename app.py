@@ -59,6 +59,8 @@ class RenderSpecIn(BaseModel):
     name: str = ""
     timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
     is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
+    wait_seconds: float = Field(0.0, description="自适应等待秒数（>0 时在时限内尝试等待成片，超时则平滑返回 task_id）")
+    force: bool = Field(False, description="若当前已有其他任务在运行，是否强制终止旧任务并开启新任务")
 
 
 class RenderCodeIn(BaseModel):
@@ -72,6 +74,13 @@ class RenderCodeIn(BaseModel):
     input_props: dict | None = None
     timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
     is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
+    wait_seconds: float = Field(0.0, description="自适应等待秒数（>0 时在时限内尝试等待成片，超时则平滑返回 task_id）")
+    force: bool = Field(False, description="若当前已有其他任务在运行，是否强制终止旧任务并开启新任务")
+
+
+class CancelTaskIn(BaseModel):
+    task_id: str = ""
+    reason: str = ""
 
 
 
@@ -438,6 +447,18 @@ def api_get_poster(item_id: str):
 
 # ==================== 渲染 REST 端点 ====================
 
+@app.post("/api/render/task/cancel")
+@app.post("/api/render/task/{task_id}/cancel")
+def api_cancel_render_task(task_id: str = "", payload: CancelTaskIn | None = None):
+    """REST API: 终止并取消指定的渲染任务，或者取消当前正在运行的活跃任务，释放算力资源。"""
+    tid = task_id or (payload.task_id if payload else "")
+    reason = payload.reason if payload else ""
+    res = M.TASKS.cancel_task(task_id=tid, reason=reason)
+    if not res.get("ok"):
+        raise HTTPException(status_code=400, detail=res.get("error"))
+    return res
+
+
 @app.post("/api/render/spec/async")
 async def api_render_spec_async(payload: RenderSpecIn):
     """REST API: 异步提交声明式 Spec 渲染任务，毫秒级返回 task_id，规避网络超时。"""
@@ -445,20 +466,34 @@ async def api_render_spec_async(payload: RenderSpecIn):
         spec=payload.spec,
         name=payload.name,
         timeout=payload.timeout,
+        force=payload.force,
         output_dir=M.OUTPUT_DIR,
         render_fn=render_spec_to_video,
         register_fn=M.STORE.register,
         get_base_url_fn=M.get_base_url,
     )
+    if task.get("conflict"):
+        return JSONResponse(status_code=409, content=task)
+
+    task_id = task["task_id"]
+    if payload.wait_seconds > 0:
+        finished = await M.TASKS.wait_for_task(task_id, timeout=payload.wait_seconds)
+        if finished.get("status") == "completed":
+            return {"ok": True, "task_id": task_id, "status": "completed", **(finished.get("result") or {})}
+        elif finished.get("status") == "failed":
+            raise HTTPException(status_code=500, detail=finished.get("error"))
+        elif finished.get("status") == "cancelled":
+            raise HTTPException(status_code=400, detail=finished.get("error", "Task cancelled"))
+
     return {
         "ok": True,
-        "task_id": task["task_id"],
+        "task_id": task_id,
         "title": task["title"],
         "status": task["status"],
-        "scenes_count": task["scenes_count"],
-        "estimated_duration_seconds": task["estimated_duration_seconds"],
-        "estimated_render_seconds": task["estimated_render_seconds"],
-        "query_url": f"/api/render/task/{task['task_id']}",
+        "scenes_count": task.get("scenes_count", 0),
+        "estimated_duration_seconds": task.get("estimated_duration_seconds", 0),
+        "estimated_render_seconds": task.get("estimated_render_seconds", 0),
+        "query_url": f"/api/render/task/{task_id}",
     }
 
 
@@ -475,26 +510,44 @@ async def api_render_code_async(payload: RenderCodeIn):
         height=payload.height,
         input_props=payload.input_props,
         timeout=payload.timeout,
+        force=payload.force,
         output_dir=M.OUTPUT_DIR,
         render_fn=render_code_to_video,
         register_fn=M.STORE.register,
         get_base_url_fn=M.get_base_url,
     )
+    if task.get("conflict"):
+        return JSONResponse(status_code=409, content=task)
+
+    task_id = task["task_id"]
+    if payload.wait_seconds > 0:
+        finished = await M.TASKS.wait_for_task(task_id, timeout=payload.wait_seconds)
+        if finished.get("status") == "completed":
+            return {"ok": True, "task_id": task_id, "status": "completed", **(finished.get("result") or {})}
+        elif finished.get("status") == "failed":
+            raise HTTPException(status_code=500, detail=finished.get("error"))
+        elif finished.get("status") == "cancelled":
+            raise HTTPException(status_code=400, detail=finished.get("error", "Task cancelled"))
+
     return {
         "ok": True,
-        "task_id": task["task_id"],
+        "task_id": task_id,
         "title": task["title"],
         "status": task["status"],
-        "estimated_duration_seconds": task["estimated_duration_seconds"],
-        "estimated_render_seconds": task["estimated_render_seconds"],
-        "query_url": f"/api/render/task/{task['task_id']}",
+        "estimated_duration_seconds": task.get("estimated_duration_seconds", 0),
+        "estimated_render_seconds": task.get("estimated_render_seconds", 0),
+        "query_url": f"/api/render/task/{task_id}",
     }
 
 
 @app.get("/api/render/task/{task_id}")
-def api_get_render_task(task_id: str):
-    """REST API: 查询异步渲染任务当前状态与渲染结果。"""
-    task = M.TASKS.get_task(task_id)
+async def api_get_render_task(task_id: str, wait_seconds: float = Query(0.0)):
+    """REST API: 查询异步渲染任务当前状态与渲染结果（支持 wait_seconds 长轮询）。"""
+    if wait_seconds > 0:
+        task = await M.TASKS.wait_for_task(task_id, timeout=wait_seconds)
+    else:
+        task = M.TASKS.get_task(task_id)
+
     if not task:
         raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
 
@@ -515,7 +568,7 @@ def api_get_render_task(task_id: str):
     if status == "completed":
         res["result"] = task.get("result")
         res["render_time_seconds"] = task.get("render_time_seconds", 0.0)
-    elif status == "failed":
+    elif status in ("failed", "cancelled"):
         res["ok"] = False
         res["error"] = task.get("error")
 
@@ -527,6 +580,7 @@ def api_list_render_tasks(limit: int = 30):
     """REST API: 获取最近的后台渲染任务列表。"""
     tasks = M.TASKS.list_tasks(limit=limit)
     return {"total": len(tasks), "tasks": tasks}
+
 
 
 @app.post("/api/render/spec")

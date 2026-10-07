@@ -131,6 +131,23 @@ def get_render_timeout() -> int:
     return int(os.environ.get("RENDER_TIMEOUT", "600"))
 
 
+def _kill_proc_tree(proc: asyncio.subprocess.Process | None) -> None:
+    """彻底终止进程树及其派生的所有 Chromium/FFmpeg/Node 子进程。"""
+    if not proc or proc.returncode is not None:
+        return
+    try:
+        if sys.platform != "win32":
+            import signal
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                proc.kill()
+        else:
+            proc.kill()
+    except Exception:
+        pass
+
+
 async def render_spec_to_video(
     spec: dict[str, Any],
     item_id: str,
@@ -221,6 +238,10 @@ async def render_spec_to_video(
     start_time = time.time()
     sem = get_render_semaphore()
     proc: asyncio.subprocess.Process | None = None
+    extra_kwargs: dict[str, Any] = {}
+    if sys.platform != "win32":
+        extra_kwargs["start_new_session"] = True
+
     try:
         async with sem:
             proc = await asyncio.create_subprocess_exec(
@@ -228,6 +249,7 @@ async def render_spec_to_video(
                 cwd=str(ENGINE_DIR),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                **extra_kwargs,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
             elapsed = round(time.time() - start_time, 2)
@@ -260,20 +282,13 @@ async def render_spec_to_video(
             "render_time_seconds": elapsed,
         }
     except asyncio.TimeoutError:
-        if proc:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
+        _kill_proc_tree(proc)
         return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        _kill_proc_tree(proc)
+        raise
     except Exception as e:
-        if proc:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
+        _kill_proc_tree(proc)
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):
@@ -418,11 +433,16 @@ async def render_code_to_video(
                         with open(USER_SRC_DIR / "Video.tsx", "w", encoding="utf-8") as f:
                             f.write(bridge_code)
 
+                extra_kwargs: dict[str, Any] = {}
+                if sys.platform != "win32":
+                    extra_kwargs["start_new_session"] = True
+
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(ENGINE_DIR),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    **extra_kwargs,
                 )
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=effective_timeout)
                 elapsed = round(time.time() - start_time, 2)
@@ -455,20 +475,13 @@ async def render_code_to_video(
             "render_time_seconds": elapsed,
         }
     except asyncio.TimeoutError:
-        if proc:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
+        _kill_proc_tree(proc)
         return {"success": False, "error": f"Render timed out after {effective_timeout} seconds"}
+    except (asyncio.CancelledError, KeyboardInterrupt):
+        _kill_proc_tree(proc)
+        raise
     except Exception as e:
-        if proc:
-            try:
-                proc.kill()
-                await proc.wait()
-            except Exception:
-                pass
+        _kill_proc_tree(proc)
         return {"success": False, "error": str(e)}
     finally:
         if os.path.exists(temp_props_path):

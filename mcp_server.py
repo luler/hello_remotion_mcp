@@ -91,13 +91,24 @@ _server_kwargs = {
         "4. 电影感镜头配方卡知识库 (Video-Shotcraft，157张镜头卡与214个动效组件)：\n"
         "   - 提供片头(opening)、2.5D运镜(camera)、UI动效(ui-entrance)、交互演示(interaction)、数据高亮(data)、高级字效(typography)、光效质感(effects)、节奏停顿(rhythm)、转场(transition)、片尾(outro)等10大分类；\n"
         "   - 可随时调用 `list_shotcraft_categories`, `search_shotcraft_shots`, `get_shotcraft_recipe` 检索电影感参数与动效拆解。\n\n"
-        "【长视频制作与输出强制铁律】\n"
-        "1. 严禁碎剪：遇到篇幅较长的科普、汇报、政策解读或商业方案，必须作为一个完整视频合成（包含 5~10 个连续场景），通过异步任务 `submit_video_task_from_spec` 提交后轮询，绝不可拆成碎片！\n"
-        "2. 中断重连与状态寻查：若网络闪断、客户端超时，或用户在后续对话中询问‘做好了吗’、‘视频进度如何’、‘刚才的视频呢’时：\n"
-        "   - 优先通过 `get_video_task_status(task_id)` 查询状态；\n"
-        "   - 若未提供任务 ID，调用 `get_video_task_status()`（留空自动查最新）或 `list_video_tasks()` 获取最近任务；\n"
-        "   - 若已完成直接输出 `user_display_markdown` 视频卡片；若仍在渲染中则汇报进度与耗时，严禁在未确认后台状态前盲目重新发起渲染！\n"
-        "3. 最终回复强制铁律：在最终给用户的回复中，你【必须直接原样输出 user_display_markdown】！"
+        "【视频制作防超时闭环与任务互斥铁律】\n"
+        "1. 智能等待与自适应防超时：\n"
+        "   - 当调用 `create_video_from_spec` 或 `submit_video_task_from_spec` 时，系统默认等待 35 秒；\n"
+        "   - 若视频在 35 秒内渲染完成（短视频），直接在本次返回成片与 Markdown 卡片；\n"
+        "   - 若 35 秒内未完成（多镜头长视频），系统会在客户端网络超时前平滑返回 `task_id`，并告知正在后台全力渲染，杜绝网络 60s 报错中断！\n"
+        "   - 客户端随后每隔 30~60 秒调用 `get_video_task_status(task_id)` 轮询，直到获取 `status: completed` 成片。\n"
+        "2. 任务互斥与放弃/取消逻辑（闭环控制）：\n"
+        "   - 系统限制同一时间只有一个活跃渲染任务。若用户在任务进行中又发起了新视频需求：\n"
+        "     * 系统会自动拦截并明确提示：当前已有视频任务【标题】（Task ID: ...）正在进行中；\n"
+        "     * 若用户明确表示不想做上一个视频了或想换题目，大模型必须先调用 `cancel_video_task()` 终止上一任务并释放算力，然后再发起新视频制作！\n"
+        "     * 若用户坚持强制覆盖，也可在提交工具时传入 `force=True` 强制终止旧任务。\n"
+        "3. 中断重连与状态找回：\n"
+        "   - 若网络闪断、客户端超时，或用户后续询问‘做好了吗’、‘视频进度如何’：\n"
+        "     * 优先通过 `get_video_task_status(task_id)` 查询已知任务；\n"
+        "     * 若未提供任务 ID，调用 `get_video_task_status()`（留空自动查最新）获取进度；\n"
+        "     * 若已完成直接输出 `user_display_markdown` 视频卡片；若仍在渲染中则汇报进度与耗时，严禁在未确认后台状态前盲目重新发起渲染！\n"
+        "4. 严禁碎剪：遇到篇幅较长的科普、汇报、政策解读或商业方案，必须作为一个完整视频合成，绝不可拆成碎片！\n"
+        "5. 最终回复强制铁律：在最终给用户的回复中，你【必须直接原样输出 user_display_markdown】！"
         "必须确保封面图通过 `![封面](poster_url)` 渲染大图展示，并展示在线播放与下载的超链接，绝对严禁折叠或擅自省略图片与链接！"
     ),
 }
@@ -116,48 +127,119 @@ if _transport_security is not None:
         server.settings.transport_security = _transport_security
 
 
-# ==================== 核心视频制作工具 ====================
+# ==================== 核心视频制作与任务管理工具 ====================
+
+@server.tool()
+async def cancel_video_task(
+    task_id: str = "",
+    reason: str = "",
+) -> str:
+    """终止并取消正在进行中的视频制作任务，释放底层 Chromium 与 FFmpeg 渲染算力。
+
+    当用户不想继续制作当前视频、或者想切换题目重新制作时，调用此工具结束上一个任务。
+
+    Args:
+        task_id: 待取消的任务 ID (如 task_spec_...)，若留空则自动取消当前正在运行的活跃任务
+        reason: 取消原因说明（可选）
+
+    Returns:
+        JSON 格式取消执行结果
+    """
+    res = TASKS.cancel_task(task_id=task_id, reason=reason)
+    return json.dumps(res, ensure_ascii=False, indent=2)
+
 
 @server.tool()
 async def submit_video_task_from_spec(
     spec: dict[str, Any],
     name: str = "",
+    wait_seconds: float = 35.0,
+    force: bool = False,
     timeout: int | None = None,
 ) -> str:
-    """【长视频/多镜头首选】异步提交声明式 Spec 视频渲染任务，毫秒级返回 task_id，彻底规避 HTTP 超时。
+    """声明式 Spec 视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截与强制覆盖）。
 
-    适合时长较长（>15秒）或包含多个场景镜头的视频生成。提交后每隔 30-60 秒调用 `get_video_task_status(task_id)` 查询进度即可。
+    执行机制：
+    1. 互斥保护：若当前已有任务正在渲染且 force=False，系统会自动拦截并提醒用户结束上一个任务；若 force=True 则直接终止旧任务。
+    2. 智能等待：在 wait_seconds（默认 35 秒，适配客户端 60s 代理超时）内等待：
+       - 若在时限内完成（如 1~3 个短镜头），直接在本次返回成片与 Markdown 卡片；
+       - 若超时仍未完（如多镜头长视频），立即平滑返回 task_id，绝不触发客户端 Gateway Timeout，由客户端继续轮询。
 
     Args:
-        spec: 视频规格定义，必须包含 scenes 场景列表。可选字段与 create_video_from_spec 一致。
+        spec: 视频规格定义，必须包含 scenes 场景列表
         name: 可选文件名标识，留空则自动生成唯一 ID
-        timeout: 可选超时时间（秒）
-
-    Returns:
-        JSON 格式的任务提交确认，包含 task_id、预估时间与轮询建议
+        wait_seconds: 初始等待秒数（默认 35.0 秒；设为 0 则纯异步秒级返回 task_id）
+        force: 若当前已有其他任务在渲染，是否强制终止旧任务并开启新任务（默认 False）
+        timeout: 渲染总超时上限（秒）
     """
     task = TASKS.create_spec_task(
         spec=spec,
         name=name,
         timeout=timeout,
+        force=force,
         output_dir=OUTPUT_DIR,
         render_fn=render_spec_to_video,
         register_fn=STORE.register,
         get_base_url_fn=get_base_url,
     )
 
+    if task.get("conflict"):
+        return json.dumps(task, ensure_ascii=False, indent=2)
+
+    task_id = task["task_id"]
+
+    # 若指定了就地等待（默认 35 秒）
+    if wait_seconds > 0:
+        finished = await TASKS.wait_for_task(task_id, timeout=wait_seconds)
+        status = finished.get("status")
+        if status == "completed":
+            res = finished.get("result") or {}
+            return json.dumps({
+                "ok": True,
+                "task_id": task_id,
+                "status": "completed",
+                "title": finished.get("title", ""),
+                "render_time_seconds": finished.get("render_time_seconds", 0.0),
+                "video_url": res.get("video_url", ""),
+                "download_url": res.get("download_url", ""),
+                "poster_url": res.get("poster_url", ""),
+                "duration_seconds": res.get("duration_seconds", 0),
+                "resolution": res.get("resolution", ""),
+                "file_size_mb": res.get("file_size_mb", 0.0),
+                "user_display_markdown": res.get("user_display_markdown", ""),
+            }, ensure_ascii=False, indent=2)
+        elif status == "failed":
+            return json.dumps({
+                "ok": False,
+                "task_id": task_id,
+                "status": "failed",
+                "error": finished.get("error", "Unknown error"),
+            }, ensure_ascii=False, indent=2)
+        elif status == "cancelled":
+            return json.dumps({
+                "ok": False,
+                "task_id": task_id,
+                "status": "cancelled",
+                "error": finished.get("error", "任务已被取消"),
+            }, ensure_ascii=False, indent=2)
+
+    # 超过 wait_seconds 仍未渲染完（属于长视频），在客户端超时前平滑交还 task_id
+    cur_task = TASKS.get_task(task_id) or task
+    elapsed = cur_task.get("elapsed_seconds", 0.0)
+    est = cur_task.get("estimated_render_seconds", 60.0)
     return json.dumps({
         "ok": True,
-        "task_id": task["task_id"],
-        "title": task["title"],
-        "status": task["status"],
-        "scenes_count": task["scenes_count"],
-        "estimated_duration_seconds": task["estimated_duration_seconds"],
-        "estimated_render_seconds": task["estimated_render_seconds"],
+        "task_id": task_id,
+        "title": cur_task.get("title", ""),
+        "status": "rendering",
+        "scenes_count": cur_task.get("scenes_count", 0),
+        "estimated_duration_seconds": cur_task.get("estimated_duration_seconds", 0),
+        "elapsed_seconds": elapsed,
+        "estimated_render_seconds": est,
         "message": (
-            f"视频任务已成功加入后台队列（Task ID: {task['task_id']}）。"
-            f"本视频包含 {task['scenes_count']} 个场景镜头，预计成片时长 {task['estimated_duration_seconds']} 秒，预估渲染耗时约 {task['estimated_render_seconds']} 秒。"
-            f"请告知用户正在后台渲染，并每隔 30~60 秒调用 get_video_task_status 查询任务进度。渲染完成后将直接获取完整视频卡片。"
+            f"视频正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
+            f"为规避客户端 HTTP 读取超时，本次调用已平滑返回任务凭证。"
+            f"请告知用户正在后台渲染，并每隔 30~60 秒调用 get_video_task_status 查询任务进度。"
         ),
     }, ensure_ascii=False, indent=2)
 
@@ -172,23 +254,11 @@ async def submit_video_task_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
+    wait_seconds: float = 35.0,
+    force: bool = False,
     timeout: int | None = None,
 ) -> str:
-    """【长视频/复杂组件首选】异步提交原生 React / Remotion 源码视频渲染任务，毫秒级返回 task_id。
-
-    适合长时长源码或复杂 3D/粒子运算动画。提交后每隔 30-60 秒调用 `get_video_task_status(task_id)` 查询进度。
-
-    Args:
-        files: 源码文件映射字典或 JSON 字符串
-        title: 视频标题
-        entry_file: 入口文件路径，默认为 /src/Video.tsx
-        duration_in_frames: 总时长帧数
-        fps: 帧率，默认 30
-        width: 视频宽度像素，默认 1920
-        height: 视频高度像素，默认 1080
-        input_props: 可选传递给入口组件的 React props 字典
-        timeout: 可选超时时间（秒）
-    """
+    """React 源码模式视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截与强制覆盖）。"""
     file_map: dict[str, str] = {}
     if isinstance(files, str):
         try:
@@ -213,42 +283,93 @@ async def submit_video_task_from_code(
         height=height,
         input_props=input_props,
         timeout=timeout,
+        force=force,
         output_dir=OUTPUT_DIR,
         render_fn=render_code_to_video,
         register_fn=STORE.register,
         get_base_url_fn=get_base_url,
     )
 
+    if task.get("conflict"):
+        return json.dumps(task, ensure_ascii=False, indent=2)
+
+    task_id = task["task_id"]
+
+    if wait_seconds > 0:
+        finished = await TASKS.wait_for_task(task_id, timeout=wait_seconds)
+        status = finished.get("status")
+        if status == "completed":
+            res = finished.get("result") or {}
+            return json.dumps({
+                "ok": True,
+                "task_id": task_id,
+                "status": "completed",
+                "title": finished.get("title", ""),
+                "render_time_seconds": finished.get("render_time_seconds", 0.0),
+                "video_url": res.get("video_url", ""),
+                "download_url": res.get("download_url", ""),
+                "poster_url": res.get("poster_url", ""),
+                "duration_seconds": res.get("duration_seconds", 0),
+                "resolution": res.get("resolution", ""),
+                "file_size_mb": res.get("file_size_mb", 0.0),
+                "user_display_markdown": res.get("user_display_markdown", ""),
+            }, ensure_ascii=False, indent=2)
+        elif status == "failed":
+            return json.dumps({
+                "ok": False,
+                "task_id": task_id,
+                "status": "failed",
+                "error": finished.get("error", "Unknown error"),
+            }, ensure_ascii=False, indent=2)
+        elif status == "cancelled":
+            return json.dumps({
+                "ok": False,
+                "task_id": task_id,
+                "status": "cancelled",
+                "error": finished.get("error", "任务已被取消"),
+            }, ensure_ascii=False, indent=2)
+
+    cur_task = TASKS.get_task(task_id) or task
+    elapsed = cur_task.get("elapsed_seconds", 0.0)
+    est = cur_task.get("estimated_render_seconds", 60.0)
     return json.dumps({
         "ok": True,
-        "task_id": task["task_id"],
-        "title": task["title"],
-        "status": task["status"],
-        "estimated_duration_seconds": task["estimated_duration_seconds"],
-        "estimated_render_seconds": task["estimated_render_seconds"],
+        "task_id": task_id,
+        "title": cur_task.get("title", ""),
+        "status": "rendering",
+        "elapsed_seconds": elapsed,
+        "estimated_render_seconds": est,
         "message": (
-            f"React 源码视频任务已成功加入后台队列（Task ID: {task['task_id']}），预估渲染时间约 {task['estimated_render_seconds']} 秒。"
+            f"React 源码视频任务正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
+            f"为规避客户端 HTTP 读取超时，本次调用已平滑返回任务凭证。"
             f"请告知用户正在后台渲染，并每隔 30~60 秒调用 get_video_task_status 查询任务进度。"
         ),
     }, ensure_ascii=False, indent=2)
 
 
 @server.tool()
-async def get_video_task_status(task_id: str = "") -> str:
-    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询最近一次提交的任务。
+async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0) -> str:
+    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询当前活跃或最新的任务。
 
     Args:
         task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前最新的任务
+        wait_seconds: 可选等待秒数（长轮询支持，例如等待 10~30 秒，若在期间完成则直接返回结果）
 
     Returns:
         JSON 格式任务状态。当 status 为 'completed' 时，包含完整视频 URL、封面图 URL 与 user_display_markdown。
     """
     if not task_id:
-        tasks = TASKS.list_tasks(limit=1)
-        if not tasks:
-            return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
-        task = tasks[0]
-        task_id = task["task_id"]
+        active = TASKS.get_active_task()
+        if active:
+            task_id = active["task_id"]
+        else:
+            tasks = TASKS.list_tasks(limit=1)
+            if not tasks:
+                return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
+            task_id = tasks[0]["task_id"]
+
+    if wait_seconds > 0:
+        task = await TASKS.wait_for_task(task_id, timeout=wait_seconds)
     else:
         task = TASKS.get_task(task_id)
 
@@ -281,6 +402,14 @@ async def get_video_task_status(task_id: str = "") -> str:
             "error": task.get("error", "Unknown error"),
         }, ensure_ascii=False, indent=2)
 
+    elif status == "cancelled":
+        return json.dumps({
+            "ok": False,
+            "task_id": task_id,
+            "status": "cancelled",
+            "error": task.get("error", "任务已被取消"),
+        }, ensure_ascii=False, indent=2)
+
     else:
         # queued or rendering
         elapsed = task.get("elapsed_seconds", 0.0)
@@ -294,7 +423,7 @@ async def get_video_task_status(task_id: str = "") -> str:
             "progress_percent": pct,
             "elapsed_seconds": elapsed,
             "estimated_render_seconds": est,
-            "message": f"任务正在渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。请稍等 30~60 秒后再次调用 get_video_task_status 查询。",
+            "message": f"任务正在渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。请稍等 30~60 秒后再次调用 get_video_task_status 查询，或调用 cancel_video_task 结束此任务。",
         }, ensure_ascii=False, indent=2)
 
 
@@ -306,7 +435,7 @@ async def list_video_tasks(limit: int = 5) -> str:
         limit: 返回条数（默认 5）
 
     Returns:
-        JSON 格式任务列表，包含各任务的 task_id、标题、状态(queued/rendering/completed/failed)、已耗时、成片链接
+        JSON 格式任务列表，包含各任务的 task_id、标题、状态(queued/rendering/completed/failed/cancelled)、已耗时、成片链接
     """
     tasks = TASKS.list_tasks(limit=limit)
     res = []
@@ -324,7 +453,7 @@ async def list_video_tasks(limit: int = 5) -> str:
             item["video_url"] = t["result"].get("video_url")
             item["poster_url"] = t["result"].get("poster_url")
             item["duration_seconds"] = t["result"].get("duration_seconds")
-        elif t.get("status") == "failed":
+        elif t.get("status") in ("failed", "cancelled"):
             item["error"] = t.get("error")
         res.append(item)
 
@@ -335,108 +464,21 @@ async def list_video_tasks(limit: int = 5) -> str:
     }, ensure_ascii=False, indent=2)
 
 
-
 @server.tool()
 async def create_video_from_spec(
     spec: dict[str, Any],
     name: str = "",
 ) -> str:
-    """依据声明式 JSON Spec 一键构建并渲染专业级 Remotion 动画视频，自动返回视频播放链接与封面截图。
+    """依据声明式 JSON Spec 一键构建并渲染视频（内置 35 秒智能自适应防超时保护）。
 
-    Args:
-        spec: 视频规格定义，必须包含 scenes 场景列表。可选字段：
-              - title: 视频主标题
-              - theme: 色彩主题 (tech, cyberpunk, finance, minimal, business, education, lifestyle, gaming)
-              - platform: 平台画幅 (youtube: 1920x1080, tiktok: 1080x1920, instagram_square: 1080x1080)
-              - fps: 帧率，默认 30
-              - scenes: 场景数组，每个场景包含 type 与 duration (秒)，如：
-                * TitleScene: title, subtitle, badge, variant(gradient/centered/left/bold), animation(fade_zoom/slide_up/typewriter/blur_in)
-                * BarChart: title, data: [{"label": "...", "value": 12.5}]
-                * HorizontalBarChart: title, data: [{"label": "...", "value": 85}]
-                * PieChart / DonutChart: title, data: [{"label": "...", "value": 40}]
-                * LineChart: title, data: [{"label": "...", "value": 100}]
-                * CodeBlock: title, filename, code, language, isTyping(bool)
-                * TextOverlay: headline, subheadline, style(badge/quote/minimal)
-                * EndScreen: title, channel, cta, social: ["..."]
-                * ComparisonCard: title, subtitle, left, right, vsBadge
-                * MetricCard: title, subtitle, metrics
-                * Timeline: title, subtitle, items
-                * FeatureList: title, subtitle, columns, features
-                * QuoteCard: quote, author, title, avatar
-              - audioUrl / bgm: 可选背景音乐链接或路径
-              - audioVolume: 背景音乐音量 (0.0 - 1.0, 默认 0.3)
-              - transition: {"type": "fade" | "slide" | "none", "durationFrames": 12}
-        name: 可选文件名标识，留空则自动生成唯一 ID
-
-    Returns:
-        JSON 格式渲染结果，包含视频 URL、封面图 URL 与 Markdown 展示排版
+    短视频在 35 秒内直接就地返回成片；长视频若超过 35 秒则自动平滑返回 task_id，绝不触发客户端 Gateway Timeout。
     """
-    item_id = STORE.new_id("vid_spec")
-    title = str(spec.get("title") or name or "Remotion Video").strip()
-
-    render_res = await render_spec_to_video(
+    return await submit_video_task_from_spec(
         spec=spec,
-        item_id=item_id,
-        output_dir=OUTPUT_DIR,
+        name=name,
+        wait_seconds=35.0,
+        force=False,
     )
-
-
-    if not render_res.get("success"):
-        return json.dumps({
-            "ok": False,
-            "error": render_res.get("error", "Unknown render error"),
-        }, ensure_ascii=False)
-
-    # 登记到资产仓库
-    rec = STORE.register(
-        name=f"{item_id}.mp4",
-        path=render_res["output_path"],
-        title=title,
-        mode="spec",
-        poster_path=render_res.get("poster_path", ""),
-        spec=spec,
-        item_id=item_id,
-        duration_seconds=render_res["duration_seconds"],
-        duration_frames=render_res["duration_frames"],
-        fps=render_res["fps"],
-        width=render_res["width"],
-        height=render_res["height"],
-        render_time_seconds=render_res.get("render_time_seconds", 0.0),
-    )
-
-    base = get_base_url()
-    video_url = f"{base}/api/video/{item_id}.mp4"
-    download_url = f"{base}/api/download/{item_id}.mp4"
-    now_ts = int(time.time())
-    poster_url = f"{base}/api/poster/{item_id}.jpg?t={now_ts}" if render_res.get("poster_path") else ""
-    theme_name = spec.get("theme", "tech")
-
-    poster_md = f"![{title} 封面预览]({poster_url})\n\n" if poster_url else ""
-    markdown = (
-        f"### 🎬 视频已成功生成：{title}\n\n"
-        f"{poster_md}"
-        f"- 📺 **在线播放视频**：[{title}]({video_url})\n"
-        f"- 📥 **下载高清 MP4**：[点击下载视频文件]({download_url})\n"
-        f"- ⏱️ **规格参数**：{render_res['duration_seconds']} 秒 | {render_res['width']}x{render_res['height']} | {render_res['fps']} FPS | {render_res['file_size_mb']} MB\n"
-        f"- ⏳ **渲染总耗时**：{render_res.get('render_time_seconds', 0.0)} 秒\n"
-        f"- 🎨 **制作模式**：声明式 Spec 模式 (主题: `{theme_name}`)\n"
-    )
-
-    return json.dumps({
-        "ok": True,
-        "video_id": item_id,
-        "title": title,
-        "video_url": video_url,
-        "download_url": download_url,
-        "poster_url": poster_url,
-        "duration_seconds": render_res["duration_seconds"],
-        "duration_frames": render_res["duration_frames"],
-        "fps": render_res["fps"],
-        "resolution": f"{render_res['width']}x{render_res['height']}",
-        "file_size_mb": render_res["file_size_mb"],
-        "render_time_seconds": render_res["render_time_seconds"],
-        "user_display_markdown": markdown,
-    }, ensure_ascii=False, indent=2)
 
 
 @server.tool()
@@ -450,106 +492,20 @@ async def create_video_from_code(
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
 ) -> str:
-    """使用原生 React / Remotion 源码多文件字典构建并渲染视频。
-
-    Args:
-        files: 源码文件映射字典或 JSON 字符串，例如：
-               {"/src/Video.tsx": "import {AbsoluteFill} from 'remotion';\\nexport default function Video(){return <AbsoluteFill>Hello</AbsoluteFill>;}"}
-        title: 视频标题
-        entry_file: 入口文件路径，默认为 /src/Video.tsx
-        duration_in_frames: 总时长帧数，默认 150 帧 (30fps 下为 5 秒)
-        fps: 帧率，默认 30
-        width: 视频宽度像素，默认 1920
-        height: 视频高度像素，默认 1080
-        input_props: 可选传递给入口组件的 React props 字典
-
-    Returns:
-        JSON 格式渲染结果，包含视频 URL、封面图 URL 与 Markdown 展示排版
-    """
-    file_map: dict[str, str] = {}
-    if isinstance(files, str):
-        try:
-            file_map = json.loads(files)
-        except Exception as e:
-            return json.dumps({"ok": False, "error": f"Invalid files JSON string: {e}"})
-    elif isinstance(files, dict):
-        file_map = files
-    else:
-        return json.dumps({"ok": False, "error": "files must be a dict or valid JSON string"})
-
-    if not file_map:
-        return json.dumps({"ok": False, "error": "files cannot be empty"})
-
-    item_id = STORE.new_id("vid_code")
-
-    render_res = await render_code_to_video(
-        files=file_map,
-        item_id=item_id,
-        output_dir=OUTPUT_DIR,
-        entry_file=entry_file,
+    """使用原生 React / Remotion 源码多文件字典构建并渲染视频（内置 35 秒智能自适应防超时保护）。"""
+    return await submit_video_task_from_code(
+        files=files,
         title=title,
+        entry_file=entry_file,
         duration_in_frames=duration_in_frames,
         fps=fps,
         width=width,
         height=height,
         input_props=input_props,
+        wait_seconds=35.0,
+        force=False,
     )
 
-
-    if not render_res.get("success"):
-        return json.dumps({
-            "ok": False,
-            "error": render_res.get("error", "Unknown render error"),
-        }, ensure_ascii=False)
-
-    rec = STORE.register(
-        name=f"{item_id}.mp4",
-        path=render_res["output_path"],
-        title=title,
-        mode="code",
-        poster_path=render_res.get("poster_path", ""),
-        files=file_map,
-        item_id=item_id,
-        duration_seconds=render_res["duration_seconds"],
-        duration_frames=render_res["duration_frames"],
-        fps=render_res["fps"],
-        width=render_res["width"],
-        height=render_res["height"],
-        render_time_seconds=render_res.get("render_time_seconds", 0.0),
-    )
-
-    base = get_base_url()
-    video_url = f"{base}/api/video/{item_id}.mp4"
-    download_url = f"{base}/api/download/{item_id}.mp4"
-    now_ts = int(time.time())
-    poster_url = f"{base}/api/poster/{item_id}.jpg?t={now_ts}" if render_res.get("poster_path") else ""
-
-    poster_md = f"![{title} 封面预览]({poster_url})\n\n" if poster_url else ""
-    markdown = (
-        f"### 🎬 视频已成功生成：{title}\n\n"
-        f"{poster_md}"
-        f"- 📺 **在线播放视频**：[{title}]({video_url})\n"
-        f"- 📥 **下载高清 MP4**：[点击下载视频文件]({download_url})\n"
-        f"- ⏱️ **规格参数**：{render_res['duration_seconds']} 秒 | {render_res['width']}x{render_res['height']} | {render_res['fps']} FPS | {render_res['file_size_mb']} MB\n"
-        f"- ⏳ **渲染总耗时**：{render_res.get('render_time_seconds', 0.0)} 秒\n"
-        f"- 💻 **制作模式**：自由式 React 源码模式 ({len(file_map)} 个文件)\n"
-    )
-
-    return json.dumps({
-        "ok": True,
-        "video_id": item_id,
-        "title": title,
-        "video_url": video_url,
-        "download_url": download_url,
-        "poster_url": poster_url,
-        "duration_seconds": render_res["duration_seconds"],
-        "duration_frames": render_res["duration_frames"],
-        "fps": render_res["fps"],
-        "resolution": f"{render_res['width']}x{render_res['height']}",
-        "file_size_mb": render_res["file_size_mb"],
-        "render_time_seconds": render_res["render_time_seconds"],
-        "user_display_markdown": markdown,
-    }, ensure_ascii=False, indent=2)
 
 
 @server.tool()
