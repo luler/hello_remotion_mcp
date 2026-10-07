@@ -58,6 +58,8 @@ services:
       - ./store.py:/app/store.py                        # 本地轻量持久化数据存储模块
       - ./themes.py:/app/themes.py                      # 8 大主题色彩、平台画幅与模板 Spec
       - ./rules.py:/app/rules.py                        # Remotion 动画规范指南与提示词知识库
+      - ./shotcraft_kb.py:/app/shotcraft_kb.py          # 157 镜头配方卡知识库索引器
+      - ./shotcraft:/app/shotcraft                      # 镜头配方卡 Markdown 规范库与美学设计指南
       - ./remotion_engine/src:/app/remotion_engine/src  # Remotion 动效组件库与声明式场景
       - ./remotion_engine/renderer.py:/app/remotion_engine/renderer.py # 渲染执行器子进程调度
       - ./remotion_engine/remotion.config.ts:/app/remotion_engine/remotion.config.ts # Remotion 核心编译配置

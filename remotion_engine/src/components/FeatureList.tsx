@@ -8,6 +8,7 @@ import {
 } from "remotion";
 import { ThemeConfig } from "../themes";
 import { resolveLucideIcon } from "./iconHelper";
+import { Sparkles } from "lucide-react";
 
 export interface FeatureItem {
   icon?: string;
@@ -127,11 +128,13 @@ export const FeatureList: React.FC<FeatureListProps> = ({
                 >
                   {(() => {
                     const Icon = resolveLucideIcon(f.icon);
-                    return Icon ? (
-                      <Icon size={28} color={theme.primary} strokeWidth={2} />
-                    ) : (
-                      f.icon
-                    );
+                    if (Icon) {
+                      return <Icon size={28} color={theme.primary} strokeWidth={2} />;
+                    }
+                    if (f.icon && f.icon.length <= 2) {
+                      return f.icon;
+                    }
+                    return <Sparkles size={28} color={theme.primary} strokeWidth={2} />;
                   })()}
                 </div>
               )}

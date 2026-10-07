@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 import config
 import mcp_server as M
 import rules
+import shotcraft_kb
 from remotion_engine.renderer import render_code_to_video, render_spec_to_video
 from themes import PLATFORMS, SAMPLE_SPECS, THEMES
 from web_admin import get_admin_html
@@ -556,7 +557,44 @@ def api_get_rules():
         "transitions": rules.RULE_REMOTION_TRANSITIONS,
         "text_animations": rules.RULE_REMOTION_TEXT_ANIMATIONS,
         "trimming": rules.RULE_REMOTION_TRIMMING,
+        "shotcraft_cinematic": rules.RULE_SHOTCRAFT_CINEMATIC,
     }
+
+
+# ==================== Shotcraft 电影感镜头库端点 ====================
+
+@app.get("/api/shotcraft/categories")
+def api_shotcraft_categories():
+    """获取 Shotcraft 10 大分类体系及镜头卡数量。"""
+    cats = shotcraft_kb.SHOT_INDEX.list_categories()
+    return {"ok": True, "total_cards": sum(c.get("count", 0) for c in cats), "categories": cats}
+
+
+@app.get("/api/shotcraft/shots")
+def api_shotcraft_shots(
+    q: str = Query("", description="搜索关键词"),
+    category: str = Query("", description="按分类筛选"),
+    limit: int = Query(20, ge=1, le=160),
+):
+    """搜索与筛选 157 张电影感镜头卡。"""
+    if category:
+        shots = shotcraft_kb.SHOT_INDEX.list_shots(category=category)
+        if q:
+            q_clean = q.lower().strip()
+            shots = [s for s in shots if q_clean in s["name"].lower() or q_clean in s["one_liner"].lower() or q_clean in s["applicable"].lower()]
+        results = shots[:limit]
+    else:
+        results = shotcraft_kb.SHOT_INDEX.search(query=q, limit=limit)
+    return {"ok": True, "count": len(results), "results": results}
+
+
+@app.get("/api/shotcraft/recipes/{shot_name}")
+def api_shotcraft_recipe(shot_name: str):
+    """获取指定镜头配方的完整参数表与动效设计卡片。"""
+    shot = shotcraft_kb.SHOT_INDEX.get_shot(shot_name)
+    if not shot:
+        raise HTTPException(status_code=404, detail=f"Shot recipe '{shot_name}' not found")
+    return {"ok": True, "recipe": shot}
 
 
 @app.get("/healthz")

@@ -24,10 +24,36 @@ RULE_INDEX = """# Remotion Studio MCP — 视频生成与创作指南
 - `rule_remotion_transitions`: 转场效果（Fade, Slide, Wipe, Flip）与时长计算
 - `rule_remotion_text_animations`: 打字机文字、高亮滚动与字词动效
 - `rule_remotion_trimming`: 利用负 Sequence from 实现片段裁剪
+- `rule_shotcraft_cinematic`: 157 张电影感镜头卡配方体系与音效设计美学
 - `get_video_guide`: 全面设计指引（包含 8 大内置主题配色、全平台画幅比例与场景库）
+
+3. **镜头工坊配方库 (Video-Shotcraft Tools)**：
+   - `list_shotcraft_categories`: 查看 10 大镜头分类概览与镜头数量
+   - `search_shotcraft_shots`: 按关键词或分类检索 157 张电影感镜头卡
+   - `get_shotcraft_recipe`: 深入获取特定镜头的动效核心、缓动参数表、声音规范与已知坑
 
 ## 输出规范铁律
 无论使用哪种方式生成视频，大模型在最终回复用户时，**必须原样输出返回结构中的 `user_display_markdown`**，直接展示高清封面图与可点击播放/下载的链接卡片，严禁折叠或简化！
+"""
+
+RULE_SHOTCRAFT_CINEMATIC = """# Video-Shotcraft 电影感运镜与动效配方体系
+
+本系统整合了 157 张专业电影感镜头配方卡与 214 个真实 TSX 动效组件（位于 `/remotion_engine/src/shots/`），分为 10 大分类：
+1. **片头与品牌开场 (Opening)**：十字准星描画、Logo压印、视窗起步、景深起飞（如 `brand-ink-open`, `orbit-ring-title-open`）
+2. **2.5D运镜与视角 (Camera)**：俯冲降落、微距特写、景深漫游（如 `depth-stage-orbit`, `ortho-isometric-flip`）
+3. **界面与卡片入场 (UI Entrance)**：扑克牌切发、聚光灯悬浮、折叠展开、级联飞入（如 `clip-card-looping`, `spotlight-hero-card`）
+4. **核心功能交互 (Interaction)**：打字过滤、搜索点击、切换选择、滑块调节（如 `type-and-filter`, `cursor-click-ripple`）
+5. **数据看板与亮点 (Data)**：动态滚动计数、脉冲流变、极速增长、多维指标（如 `countup-ticker`, `ring-gauge-sweep`）
+6. **字体动效与金句 (Typography)**：字标逐字压印、流光扫掠、巨幕大词、字幕卡点（如 `marker-underline-title`, `split-flap-title`）
+7. **光效与质感氛围 (Effects)**：毛玻璃景深、霓虹边缘、粒子氛围、流光漫射（如 `glass-refract`, `aurora-glow-drift`）
+8. **节奏控制与慢动作 (Rhythm)**：变速定格(Speed Ramp)、极速冲击、心跳呼吸律动
+9. **转场与镜头交接 (Transition)**：鞭抽(Whip Pan)、隐形硬切、遮挡穿透、推镜过渡
+10. **片尾与号召行动 (Outro)**：合照定格、Logo脉冲升华、号召订阅与转化
+
+## 声音设计与卡点原则
+- 每一个动效的关键定格点（如字标压印的第 12 帧）应匹配轻微的机械/撞击音效（`public/audio/sfx/impact-heavy.mp3` 或 `click-*.mp3`）。
+- 运镜加速使用 `sfx/whoosh-*.mp3`，光效扫掠使用 `sfx/shimmer.mp3`。
+- 背景音乐（BGM）在 `public/audio/bgm/` 中提供 5 首精品无版权 BGM。
 """
 
 RULE_REACT_CODE = """# Remotion React 代码编写规范

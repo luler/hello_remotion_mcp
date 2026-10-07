@@ -36,6 +36,7 @@ except Exception:
 
 import config
 import rules
+import shotcraft_kb
 from remotion_engine.renderer import render_code_to_video, render_spec_to_video
 from store import VideoStore
 from themes import PLATFORMS, SAMPLE_SPECS, THEMES
@@ -71,14 +72,19 @@ _server_kwargs = {
         "   - 输入 JSON 结构定义即可直接生成高水准商业级动画视频；\n"
         "   - 支持 8 大专业主题色彩（tech, cyberpunk, finance, minimal, business, education, lifestyle, gaming）；\n"
         "   - 支持全平台自适应画幅预设：youtube(16:9), tiktok/shorts(9:16), instagram_square(1:1)；\n"
-        "   - 内置高质量动画组件：TitleScene(片头/标题)、BarChart(柱状图)、HorizontalBarChart(水平排行榜)、"
+        "   - 内置高质量动画组件：TitleScene(片头/标题)、BrandInkOpen(电影级墨线十字准星开场)、MarkerUnderlineTitle(记号笔高亮标题)、"
+        "BarChart(柱状图)、HorizontalBarChart(水平排行榜)、"
         "PieChart(饼图/圆环图)、LineChart(折线趋势图)、CodeBlock(代码高亮视窗与打字机)、"
         "TextOverlay(核心观点金句)、EndScreen(片尾关注与号召行动)；\n"
         "   - 内置丝滑转场过渡（Fade, Slide）。\n"
         "2. 自由式 React 代码模式 (`create_video_from_code`)：\n"
         "   - 允许大模型直接提供多文件 React/Remotion 源码（以字典形式传入 files）；\n"
         "   - 支持导入 remotion 核心 API（AbsoluteFill, spring, interpolate, Sequence, useCurrentFrame 等）；\n"
-        "   - 自动编译渲染为高帧率 MP4 视频。\n\n"
+        "   - 自动编译渲染为高帧率 MP4 视频。\n"
+        "3. 电影感镜头配方卡知识库 (Video-Shotcraft，157张镜头卡与214个动效组件)：\n"
+        "   - 提供片头(opening)、2.5D运镜(camera)、UI动效(ui-entrance)、交互演示(interaction)、数据高亮(data)、高级字效(typography)、光效质感(effects)、节奏停顿(rhythm)、转场(transition)、片尾(outro)等10大分类；\n"
+        "   - 可随时调用 `list_shotcraft_categories`, `search_shotcraft_shots`, `get_shotcraft_recipe` 检索电影感参数与动效拆解；\n"
+        "   - 声明式 Spec 模式支持高频镜头直接渲染（如 `BrandInkOpen`, `MarkerUnderlineTitle` 等）。\n\n"
         "【生成工作流与输出强制铁律】\n"
         "1. 当用户需要制作视频时，优先使用 `create_video_from_spec` 构建结构清晰的视频；如用户要求特定自定义动画或复杂组件，使用 `create_video_from_code`。\n"
         "2. 视频渲染完成后，接口将返回完整的 `video_url`（可直接在线播放）、`download_url`（下载地址）、`poster_url`（高清封面图）与精心排版的 `user_display_markdown`。\n"
@@ -392,6 +398,16 @@ async def get_video_guide() -> str:
                 "desc": "权威引述、金句推荐与客户证言卡片",
                 "props": ["quote", "author", "title", "avatar", "company", "duration"],
             },
+            {
+                "type": "BrandInkOpen",
+                "desc": "电影感极简片头：墨线十字准星描画 + 逐字 letterpress 压印 + 打字机副标",
+                "props": ["wordmark (或 title)", "kicker (或 subtitle)", "accent", "duration"],
+            },
+            {
+                "type": "MarkerUnderlineTitle",
+                "desc": "记号笔下划线涂抹大标题：动态手绘马克笔质感下划线与标题弹入",
+                "props": ["title", "highlight", "subtitle", "duration"],
+            },
         ],
         "workflow_rules": rules.RULE_INDEX,
     }, ensure_ascii=False, indent=2)
@@ -466,6 +482,8 @@ async def get_coding_rules(topic: str = "all") -> str:
         "transitions": rules.RULE_REMOTION_TRANSITIONS,
         "text": rules.RULE_REMOTION_TEXT_ANIMATIONS,
         "trimming": rules.RULE_REMOTION_TRIMMING,
+        "shotcraft": rules.RULE_SHOTCRAFT_CINEMATIC,
+        "cinematic": rules.RULE_SHOTCRAFT_CINEMATIC,
     }
     if topic in topic_map:
         return topic_map[topic]
@@ -476,4 +494,87 @@ async def get_coding_rules(topic: str = "all") -> str:
         rules.RULE_REMOTION_ANIMATIONS,
         rules.RULE_REMOTION_TIMING,
         rules.RULE_REMOTION_SEQUENCING,
+        rules.RULE_SHOTCRAFT_CINEMATIC,
     ])
+
+
+# ==================== Video-Shotcraft 镜头工坊工具 ====================
+
+@server.tool()
+async def list_shotcraft_categories() -> str:
+    """获取 Video-Shotcraft 镜头配方库的 10 大分类体系（包含每个类别的镜头卡数量与设计意图）。
+
+    包含类别：
+    1. opening: 片头与品牌开场 (11款)
+    2. camera: 2.5D运镜与视角 (10款)
+    3. ui-entrance: 界面与卡片入场 (28款)
+    4. interaction: 核心功能交互 (15款)
+    5. data: 数据看板与亮点 (13款)
+    6. typography: 字体动效与金句 (26款)
+    7. effects: 光效与质感氛围 (17款)
+    8. rhythm: 节奏控制与慢动作 (11款)
+    9. transition: 转场与镜头交接 (19款)
+    10. outro: 片尾与号召行动 (7款)
+    """
+    cats = shotcraft_kb.SHOT_INDEX.list_categories()
+    return json.dumps({
+        "ok": True,
+        "total_cards": sum(c.get("count", 0) for c in cats),
+        "categories": cats,
+    }, ensure_ascii=False, indent=2)
+
+
+@server.tool()
+async def search_shotcraft_shots(query: str = "", category: str = "", limit: int = 20) -> str:
+    """搜索与筛选 Video-Shotcraft 镜头配方卡（157张专业卡片与214个动效组件）。
+
+    Args:
+        query: 搜索关键词（如 "brand", "open", "counter", "card", "macbook", "glitch", "typography", "code", "hover" 等）
+        category: 分类筛选（如 opening, camera, ui-entrance, interaction, data, typography, effects, rhythm, transition, outro）
+        limit: 返回条数上限（默认 20 条）
+    """
+    if category:
+        shots = shotcraft_kb.SHOT_INDEX.list_shots(category=category)
+        if query:
+            q = query.lower().strip()
+            shots = [s for s in shots if q in s["name"].lower() or q in s["one_liner"].lower() or q in s["applicable"].lower()]
+        results = shots[:limit]
+    else:
+        results = shotcraft_kb.SHOT_INDEX.search(query=query, limit=limit)
+
+    return json.dumps({
+        "ok": True,
+        "count": len(results),
+        "results": results,
+    }, ensure_ascii=False, indent=2)
+
+
+@server.tool()
+async def get_shotcraft_recipe(shot_name: str) -> str:
+    """获取指定电影感镜头配方的完整设计指南与实现规范。
+
+    包含：
+    - 一句话定义与适用场景 (energy, duration)
+    - 意图与视觉心理学
+    - 动效核心机制与拆解
+    - 缓动曲线与参数表 (spring/interpolate parameters)
+    - 声音设计规范 (对应音效与卡点)
+    - 已知坑 (踩坑指南与避坑技巧)
+    - TSX 参考实现组件位置
+
+    Args:
+        shot_name: 镜头卡名称或代号（如 "brand-ink-open", "marker-underline-title", "clip-card-looping", "split-flap-title" 等）
+    """
+    shot = shotcraft_kb.SHOT_INDEX.get_shot(shot_name)
+    if not shot:
+        return json.dumps({
+            "ok": False,
+            "error": f"Shot recipe not found: {shot_name}",
+            "hint": "可使用 search_shotcraft_shots 工具搜索可用镜头名称",
+        }, ensure_ascii=False, indent=2)
+
+    return json.dumps({
+        "ok": True,
+        "recipe": shot,
+    }, ensure_ascii=False, indent=2)
+
