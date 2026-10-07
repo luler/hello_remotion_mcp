@@ -61,6 +61,7 @@ class RenderSpecIn(BaseModel):
     is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
     wait_seconds: float = Field(0.0, description="自适应等待秒数（>0 时在时限内尝试等待成片，超时则平滑返回 task_id）")
     force: bool = Field(False, description="若当前已有其他任务在运行，是否强制终止旧任务并开启新任务")
+    client_id: str = Field("", description="客户端标识符（多客户端并发时用于隔离任务状态）")
 
 
 class RenderCodeIn(BaseModel):
@@ -76,11 +77,13 @@ class RenderCodeIn(BaseModel):
     is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
     wait_seconds: float = Field(0.0, description="自适应等待秒数（>0 时在时限内尝试等待成片，超时则平滑返回 task_id）")
     force: bool = Field(False, description="若当前已有其他任务在运行，是否强制终止旧任务并开启新任务")
+    client_id: str = Field("", description="客户端标识符（多客户端并发时用于隔离任务状态）")
 
 
 class CancelTaskIn(BaseModel):
     task_id: str = ""
     reason: str = ""
+    client_id: str = ""
 
 
 
@@ -295,6 +298,12 @@ def api_admin_delete(
 
     deleted = 0
     for vid in payload.ids:
+        # 安全防御：如果该视频对应的任务仍在渲染或排队中，先优雅取消子进程释放算力，再行清理
+        with M.TASKS._lock:
+            for tid, t in list(M.TASKS._tasks.items()):
+                if (t.get("item_id") == vid or tid == vid) and t.get("status") in ("queued", "rendering"):
+                    M.TASKS.cancel_task(tid, reason="用户在管理后台主动删除了该任务对应的视频")
+
         rec = M.STORE.get(vid)
         if rec:
             if rec.get("path") and os.path.exists(rec["path"]):
@@ -337,9 +346,17 @@ def api_admin_cleanup(
     authorization: str | None = Header(None),
     auth_key: str | None = Query(None),
 ):
-    """扫描并彻底清理未登记的孤儿视频/临时文件、已失效任务记录与系统 /tmp 缓存碎片。"""
+    """扫描并彻底清理未登记的孤儿视频/临时文件、已失效任务记录与系统 /tmp 缓存碎片。
+
+    强保护机制：
+    1. 正在排队或渲染中（queued/rendering）的任务文件绝对列入白名单豁免；
+    2. 任何 15 分钟以内创建或修改的新文件绝对豁免；
+    3. 系统 /tmp 缓存仅清理超过 30 分钟的历史文件，绝不触及活跃进程。
+    """
     if config.AUTH_KEY and not check_auth(authorization=authorization, auth_key=auth_key):
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    now = time.time()
 
     # 1. 查出已登记的所有有效视频与封面文件集合
     items, _ = M.STORE.list(limit=0)
@@ -353,26 +370,43 @@ def api_admin_cleanup(
         registered_files.add(f"{it['id']}.jpg")
     registered_files.add(".gitkeep")
 
-    # 2. 遍历 OUTPUT_DIR 清理所有未登记的残留孤儿/临时文件
+    # 2. 强保护白名单：正在排队或正在渲染中的任务文件，绝对不可清理！
+    for t in M.TASKS.list_tasks(limit=100):
+        status = t.get("status")
+        item_id = t.get("item_id")
+        created_at_ts = t.get("created_at_ts", 0)
+        if not item_id:
+            continue
+        # 正在渲染、排队，或者过去 1 小时内创建的任务，其目标文件绝对列入白名单免除清理
+        if status in ("queued", "rendering") or (now - created_at_ts < 3600):
+            registered_files.add(f"{item_id}.mp4")
+            registered_files.add(f"{item_id}.jpg")
+
+    # 3. 遍历 OUTPUT_DIR 清理历史孤儿文件（排除正在写入与 15 分钟内创建的文件）
     cleaned_orphan_files = []
     freed_bytes = 0
     if os.path.exists(M.OUTPUT_DIR):
         for fname in os.listdir(M.OUTPUT_DIR):
-            if fname not in registered_files:
-                fpath = os.path.join(M.OUTPUT_DIR, fname)
-                if os.path.isfile(fpath):
-                    try:
-                        sz = os.path.getsize(fpath)
-                        os.remove(fpath)
-                        cleaned_orphan_files.append(fname)
-                        freed_bytes += sz
-                    except OSError:
-                        pass
+            if fname in registered_files:
+                continue
+            fpath = os.path.join(M.OUTPUT_DIR, fname)
+            if os.path.isfile(fpath):
+                try:
+                    mtime = os.path.getmtime(fpath)
+                    # 保护：任何 15 分钟以内产生或被写入的文件绝对不作为孤儿清理！
+                    if now - mtime < 900:
+                        continue
+                    sz = os.path.getsize(fpath)
+                    os.remove(fpath)
+                    cleaned_orphan_files.append(fname)
+                    freed_bytes += sz
+                except OSError:
+                    pass
 
-    # 3. 清理系统 /tmp 下的旧 Webpack bundle 缓存与 Chromium profile
+    # 4. 清理系统 /tmp 下超过 30 分钟的旧 Webpack bundle 缓存与 Chromium profile
     cleaned_tmp_count = clean_system_temp_cache(max_age_seconds=1800)
 
-    # 4. 清理旧任务记录（保留最新 30 条）
+    # 5. 清理旧任务记录（保留最新 30 条，正在排队和渲染中的活跃任务绝对不删）
     cleaned_tasks_count = M.TASKS.clean_history_tasks(keep_latest=30)
 
     return {
@@ -511,7 +545,8 @@ def api_cancel_render_task(task_id: str = "", payload: CancelTaskIn | None = Non
     """REST API: 终止并取消指定的渲染任务，或者取消当前正在运行的活跃任务，释放算力资源。"""
     tid = task_id or (payload.task_id if payload else "")
     reason = payload.reason if payload else ""
-    res = M.TASKS.cancel_task(task_id=tid, reason=reason)
+    cid = payload.client_id if payload else ""
+    res = M.TASKS.cancel_task(task_id=tid, reason=reason, client_id=cid)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
@@ -525,6 +560,7 @@ async def api_render_spec_async(payload: RenderSpecIn):
         name=payload.name,
         timeout=payload.timeout,
         force=payload.force,
+        client_id=payload.client_id,
         output_dir=M.OUTPUT_DIR,
         render_fn=render_spec_to_video,
         register_fn=M.STORE.register,
@@ -566,9 +602,10 @@ async def api_render_code_async(payload: RenderCodeIn):
         fps=payload.fps,
         width=payload.width,
         height=payload.height,
-        input_props=payload.input_props,
+        input_props=input_props if 'input_props' in locals() else payload.input_props,
         timeout=payload.timeout,
         force=payload.force,
+        client_id=payload.client_id,
         output_dir=M.OUTPUT_DIR,
         render_fn=render_code_to_video,
         register_fn=M.STORE.register,

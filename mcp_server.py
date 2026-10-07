@@ -133,19 +133,21 @@ if _transport_security is not None:
 async def cancel_video_task(
     task_id: str = "",
     reason: str = "",
+    client_id: str = "",
 ) -> str:
     """终止并取消正在进行中的视频制作任务，释放底层 Chromium 与 FFmpeg 渲染算力。
 
     当用户不想继续制作当前视频、或者想切换题目重新制作时，调用此工具结束上一个任务。
 
     Args:
-        task_id: 待取消的任务 ID (如 task_spec_...)，若留空则自动取消当前正在运行的活跃任务
+        task_id: 待取消的任务 ID (如 task_spec_...)，若留空则自动取消当前客户端（或系统）正在运行的活跃任务
         reason: 取消原因说明（可选）
+        client_id: 客户端唯一标识符（可选，用于多客户端环境精准识别）
 
     Returns:
         JSON 格式取消执行结果
     """
-    res = TASKS.cancel_task(task_id=task_id, reason=reason)
+    res = TASKS.cancel_task(task_id=task_id, reason=reason, client_id=client_id)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
@@ -156,11 +158,12 @@ async def submit_video_task_from_spec(
     wait_seconds: float = 35.0,
     force: bool = False,
     timeout: int | None = None,
+    client_id: str = "",
 ) -> str:
-    """声明式 Spec 视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截与强制覆盖）。
+    """声明式 Spec 视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截、多客户端隔离与强制覆盖）。
 
     执行机制：
-    1. 互斥保护：若当前已有任务正在渲染且 force=False，系统会自动拦截并提醒用户结束上一个任务；若 force=True 则直接终止旧任务。
+    1. 互斥保护与多客户端隔离：同一客户端若已有任务正在渲染且 force=False，系统会自动拦截并提醒用户；不同客户端（不同 client_id）互不影响；若 force=True 则直接终止旧任务。
     2. 智能等待：在 wait_seconds（默认 35 秒，适配客户端 60s 代理超时）内等待：
        - 若在时限内完成（如 1~3 个短镜头），直接在本次返回成片与 Markdown 卡片；
        - 若超时仍未完（如多镜头长视频），立即平滑返回 task_id，绝不触发客户端 Gateway Timeout，由客户端继续轮询。
@@ -171,12 +174,14 @@ async def submit_video_task_from_spec(
         wait_seconds: 初始等待秒数（默认 35.0 秒；设为 0 则纯异步秒级返回 task_id）
         force: 若当前已有其他任务在渲染，是否强制终止旧任务并开启新任务（默认 False）
         timeout: 渲染总超时上限（秒）
+        client_id: 客户端唯一标识符（用于多客户端独立任务隔离）
     """
     task = TASKS.create_spec_task(
         spec=spec,
         name=name,
         timeout=timeout,
         force=force,
+        client_id=client_id,
         output_dir=OUTPUT_DIR,
         render_fn=render_spec_to_video,
         register_fn=STORE.register,
@@ -257,8 +262,9 @@ async def submit_video_task_from_code(
     wait_seconds: float = 35.0,
     force: bool = False,
     timeout: int | None = None,
+    client_id: str = "",
 ) -> str:
-    """React 源码模式视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截与强制覆盖）。"""
+    """React 源码模式视频生成（智能防超时闭环：短视频就地返回成片，长视频平滑转后台轮询，支持并发冲突拦截、多客户端隔离与强制覆盖）。"""
     file_map: dict[str, str] = {}
     if isinstance(files, str):
         try:
@@ -284,6 +290,7 @@ async def submit_video_task_from_code(
         input_props=input_props,
         timeout=timeout,
         force=force,
+        client_id=client_id,
         output_dir=OUTPUT_DIR,
         render_fn=render_code_to_video,
         register_fn=STORE.register,
@@ -348,22 +355,23 @@ async def submit_video_task_from_code(
 
 
 @server.tool()
-async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0) -> str:
+async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0, client_id: str = "") -> str:
     """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询当前活跃或最新的任务。
 
     Args:
-        task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前最新的任务
+        task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前客户端最新的任务
         wait_seconds: 可选等待秒数（长轮询支持，例如等待 10~30 秒，若在期间完成则直接返回结果）
+        client_id: 客户端唯一标识符（可选，用于多客户端环境精准识别）
 
     Returns:
         JSON 格式任务状态。当 status 为 'completed' 时，包含完整视频 URL、封面图 URL 与 user_display_markdown。
     """
     if not task_id:
-        active = TASKS.get_active_task()
+        active = TASKS.get_active_task(client_id=client_id)
         if active:
             task_id = active["task_id"]
         else:
-            tasks = TASKS.list_tasks(limit=1)
+            tasks = TASKS.list_tasks(limit=1, client_id=client_id)
             if not tasks:
                 return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
             task_id = tasks[0]["task_id"]
@@ -428,20 +436,22 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0) ->
 
 
 @server.tool()
-async def list_video_tasks(limit: int = 5) -> str:
-    """获取最近提交的视频渲染任务列表及实时状态（支持断线重连、找回未完成或刚完成的任务）。
+async def list_video_tasks(limit: int = 5, client_id: str = "") -> str:
+    """获取最近提交的视频渲染任务列表及实时状态（支持多客户端过滤与断线重连）。
 
     Args:
         limit: 返回条数（默认 5）
+        client_id: 客户端唯一标识符（可选）
 
     Returns:
         JSON 格式任务列表，包含各任务的 task_id、标题、状态(queued/rendering/completed/failed/cancelled)、已耗时、成片链接
     """
-    tasks = TASKS.list_tasks(limit=limit)
+    tasks = TASKS.list_tasks(limit=limit, client_id=client_id)
     res = []
     for t in tasks:
         item = {
             "task_id": t.get("task_id"),
+            "client_id": t.get("client_id", ""),
             "title": t.get("title"),
             "mode": t.get("mode"),
             "status": t.get("status"),
@@ -468,8 +478,9 @@ async def list_video_tasks(limit: int = 5) -> str:
 async def create_video_from_spec(
     spec: dict[str, Any],
     name: str = "",
+    client_id: str = "",
 ) -> str:
-    """依据声明式 JSON Spec 一键构建并渲染视频（内置 35 秒智能自适应防超时保护）。
+    """依据声明式 JSON Spec 一键构建并渲染视频（内置 35 秒智能自适应防超时保护与多客户端隔离）。
 
     短视频在 35 秒内直接就地返回成片；长视频若超过 35 秒则自动平滑返回 task_id，绝不触发客户端 Gateway Timeout。
     """
@@ -478,6 +489,7 @@ async def create_video_from_spec(
         name=name,
         wait_seconds=35.0,
         force=False,
+        client_id=client_id,
     )
 
 
@@ -491,8 +503,9 @@ async def create_video_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
+    client_id: str = "",
 ) -> str:
-    """使用原生 React / Remotion 源码多文件字典构建并渲染视频（内置 35 秒智能自适应防超时保护）。"""
+    """使用原生 React / Remotion 源码多文件字典构建并渲染视频（内置 35 秒智能自适应防超时保护与多客户端隔离）。"""
     return await submit_video_task_from_code(
         files=files,
         title=title,
@@ -504,6 +517,7 @@ async def create_video_from_code(
         input_props=input_props,
         wait_seconds=35.0,
         force=False,
+        client_id=client_id,
     )
 
 

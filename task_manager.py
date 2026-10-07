@@ -62,11 +62,13 @@ class TaskManager:
             res["elapsed_seconds"] = round(now - started_at_ts, 1)
         return res
 
-    def get_active_task(self) -> dict[str, Any] | None:
-        """获取当前正在排队或渲染中的唯一活跃任务（用于并发冲突拦截）。"""
+    def get_active_task(self, client_id: str = "") -> dict[str, Any] | None:
+        """获取当前正在排队或渲染中的活跃任务。支持多客户端隔离（若指定 client_id 则仅匹配该客户端名下的活跃任务）。"""
         with self._lock:
             for task in self._tasks.values():
                 if task.get("status") in ("queued", "rendering"):
+                    if client_id and task.get("client_id") and task.get("client_id") != client_id:
+                        continue
                     res = dict(task)
                     now = time.time()
                     started_at_ts = res.get("started_at_ts") or res.get("created_at_ts", now)
@@ -74,9 +76,11 @@ class TaskManager:
                     return res
         return None
 
-    def list_tasks(self, limit: int = 30) -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 30, client_id: str = "") -> list[dict[str, Any]]:
         with self._lock:
             items = [dict(t) for t in self._tasks.values()]
+        if client_id:
+            items = [t for t in items if not t.get("client_id") or t.get("client_id") == client_id]
         items.sort(key=lambda x: x.get("created_at_ts", 0), reverse=True)
         now = time.time()
         for res in items:
@@ -86,11 +90,11 @@ class TaskManager:
                 res["elapsed_seconds"] = round(now - started_at_ts, 1)
         return items[:limit]
 
-    def cancel_task(self, task_id: str = "", reason: str = "") -> dict[str, Any]:
-        """终止并取消指定的渲染任务，或者取消当前正在运行的活跃任务，释放算力资源。"""
+    def cancel_task(self, task_id: str = "", reason: str = "", client_id: str = "") -> dict[str, Any]:
+        """终止并取消指定的渲染任务，或者取消当前客户端正在运行的活跃任务，释放算力资源。"""
         target_id = (task_id or "").strip()
         if not target_id:
-            active = self.get_active_task()
+            active = self.get_active_task(client_id=client_id)
             if not active:
                 return {"ok": False, "error": "当前没有正在进行中的视频任务需要取消"}
             target_id = active["task_id"]
@@ -182,18 +186,20 @@ class TaskManager:
         name: str = "",
         timeout: int | None = None,
         force: bool = False,
+        client_id: str = "",
         output_dir: str = "",
         render_fn: Any = None,
         register_fn: Any = None,
         get_base_url_fn: Any = None,
     ) -> dict[str, Any]:
-        # 1. 检查当前是否已有正在渲染或排队的任务
-        active = self.get_active_task()
+        # 1. 检查当前客户端是否已有正在渲染或排队的任务
+        active = self.get_active_task(client_id=client_id)
         if active and not force:
             return {
                 "ok": False,
                 "conflict": True,
                 "task_id": active["task_id"],
+                "client_id": active.get("client_id", ""),
                 "title": active.get("title", ""),
                 "status": active.get("status", ""),
                 "elapsed_seconds": active.get("elapsed_seconds", 0.0),
@@ -205,7 +211,7 @@ class TaskManager:
                 ),
             }
         elif active and force:
-            self.cancel_task(active["task_id"], reason="被新视频制作任务强制替换取消")
+            self.cancel_task(active["task_id"], reason="被新视频制作任务强制替换取消", client_id=client_id)
 
         task_id = self.new_task_id("task_spec")
         item_id = self.new_task_id("vid_spec")
@@ -217,6 +223,7 @@ class TaskManager:
 
         task_record = {
             "task_id": task_id,
+            "client_id": client_id,
             "item_id": item_id,
             "mode": "spec",
             "title": title,
@@ -390,17 +397,19 @@ class TaskManager:
         input_props: dict | None = None,
         timeout: int | None = None,
         force: bool = False,
+        client_id: str = "",
         output_dir: str = "",
         render_fn: Any = None,
         register_fn: Any = None,
         get_base_url_fn: Any = None,
     ) -> dict[str, Any]:
-        active = self.get_active_task()
+        active = self.get_active_task(client_id=client_id)
         if active and not force:
             return {
                 "ok": False,
                 "conflict": True,
                 "task_id": active["task_id"],
+                "client_id": active.get("client_id", ""),
                 "title": active.get("title", ""),
                 "status": active.get("status", ""),
                 "elapsed_seconds": active.get("elapsed_seconds", 0.0),
@@ -412,7 +421,7 @@ class TaskManager:
                 ),
             }
         elif active and force:
-            self.cancel_task(active["task_id"], reason="被新视频制作任务强制替换取消")
+            self.cancel_task(active["task_id"], reason="被新视频制作任务强制替换取消", client_id=client_id)
 
         task_id = self.new_task_id("task_code")
         item_id = self.new_task_id("vid_code")
@@ -420,6 +429,7 @@ class TaskManager:
 
         task_record = {
             "task_id": task_id,
+            "client_id": client_id,
             "item_id": item_id,
             "mode": "code",
             "title": title,
