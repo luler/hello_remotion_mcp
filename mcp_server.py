@@ -73,7 +73,7 @@ _server_kwargs = {
         "1. 异步任务模式（制作长视频/多镜头推荐首选，彻底杜绝网络超时与碎片化）：\n"
         "   - 当视频包含 3 个及以上镜头或预计时长较长时，必须优先使用 `submit_video_task_from_spec`（或 `submit_video_task_from_code`）；\n"
         "   - 接口在 50ms 内立即返回唯一任务 ID (`task_id`) 与预估耗时，完全不受客户端/反代 HTTP 60s/120s 超时限制；\n"
-        "   - 提交后每隔 30~60 秒调用 `get_video_task_status(task_id)` 查询一次；\n"
+        "   - 提交后若未完成，为大幅减少 LLM Token 消耗，请间隔约 300 秒（5分钟）调用一次 `get_video_task_status(task_id, wait_seconds=300)` 查询进度；或直接向用户汇报已在后台全速渲染，并等待用户主动询问进度时再查询；\n"
         "   - 渲染完成后直接获取视频卡片，严禁因为担心超时把一个完整主题拆分成 5~6 个碎片短视频！\n"
         "2. 声明式 Spec 模式 (`create_video_from_spec` / `submit_video_task_from_spec`)：\n"
         "   - 输入 JSON 结构定义即可直接生成高水准商业级动画视频；\n"
@@ -96,7 +96,7 @@ _server_kwargs = {
         "   - 当调用 `create_video_from_spec` 或 `submit_video_task_from_spec` 时，系统默认等待 35 秒；\n"
         "   - 若视频在 35 秒内渲染完成（短视频），直接在本次返回成片与 Markdown 卡片；\n"
         "   - 若 35 秒内未完成（多镜头长视频），系统会在客户端网络超时前平滑返回 `task_id`，并告知正在后台全力渲染，杜绝网络 60s 报错中断！\n"
-        "   - 客户端随后每隔 30~60 秒调用 `get_video_task_status(task_id)` 轮询，直到获取 `status: completed` 成片。\n"
+        "   - 客户端随后请间隔约 300 秒（5分钟）调用 `get_video_task_status(task_id, wait_seconds=300)` 查询，或直接等待用户询问；即便客户端代理网络超时也会自动重试，300 秒长间隔可减少 90% 的 Token 消耗与频繁调用。\n"
         "2. 任务互斥与放弃/取消逻辑（闭环控制）：\n"
         "   - 系统限制同一时间只有一个活跃渲染任务。若用户在任务进行中又发起了新视频需求：\n"
         "     * 系统会自动拦截并明确提示：当前已有视频任务【标题】（Task ID: ...）正在进行中；\n"
@@ -243,8 +243,7 @@ async def submit_video_task_from_spec(
         "estimated_render_seconds": est,
         "message": (
             f"视频正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
-            f"为规避客户端 HTTP 读取超时，本次调用已平滑返回任务凭证。"
-            f"请告知用户正在后台渲染，并每隔 30~60 秒调用 get_video_task_status 查询任务进度。"
+            f"为最大化节省大模型 Token 消耗，请稍候约 300 秒（5分钟）后再调用 get_video_task_status(task_id, wait_seconds=300) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
         ),
     }, ensure_ascii=False, indent=2)
 
@@ -348,19 +347,18 @@ async def submit_video_task_from_code(
         "estimated_render_seconds": est,
         "message": (
             f"React 源码视频任务正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
-            f"为规避客户端 HTTP 读取超时，本次调用已平滑返回任务凭证。"
-            f"请告知用户正在后台渲染，并每隔 30~60 秒调用 get_video_task_status 查询任务进度。"
+            f"为最大化节省大模型 Token 消耗，请稍候约 300 秒（5分钟）后再调用 get_video_task_status(task_id, wait_seconds=300) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
         ),
     }, ensure_ascii=False, indent=2)
 
 
 @server.tool()
-async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0, client_id: str = "") -> str:
-    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询当前活跃或最新的任务。
+async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, client_id: str = "") -> str:
+    """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动查询当前客户端最新的任务。
 
     Args:
         task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动检索当前客户端最新的任务
-        wait_seconds: 可选等待秒数（长轮询支持，例如等待 10~30 秒，若在期间完成则直接返回结果）
+        wait_seconds: 可选等待秒数（长轮询支持，默认建议 300 秒，在此期间一旦渲染完成会立即就地返回成片，未完成则一直等待，有效降低 90% 的 LLM 轮询 Token 消耗；即便客户端网络超时也可自动重试）
         client_id: 客户端唯一标识符（可选，用于多客户端环境精准识别）
 
     Returns:
@@ -431,7 +429,11 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 0.0, cl
             "progress_percent": pct,
             "elapsed_seconds": elapsed,
             "estimated_render_seconds": est,
-            "message": f"任务正在渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。请稍等 30~60 秒后再次调用 get_video_task_status 查询，或调用 cancel_video_task 结束此任务。",
+            "message": (
+                f"任务正在后台全速渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。"
+                f"为节约大模型 Token 消耗，请至少间隔约 300 秒（5分钟）后再调用 get_video_task_status 查询，期间切勿高频调用；"
+                f"或直接向用户汇报当前进度后，等待用户下一次主动提问时再查。"
+            ),
         }, ensure_ascii=False, indent=2)
 
 
