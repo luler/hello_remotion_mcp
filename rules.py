@@ -14,6 +14,12 @@ RULE_INDEX = """# Remotion Studio MCP — 视频生成与创作指南
    - 商业与产品场景：`ComparisonCard` (对比/VS/优劣势分析), `MetricCard` (KPI 核心指标看板与动态滚数), `Timeline` (里程碑路线图与发光连线), `FeatureList` (特性矩阵与图标徽章), `QuoteCard` (名言引述与客户证言)
    - 背景音乐：支持 `spec.audioUrl` (或 `spec.bgm`) 与 `spec.audioVolume`，自动在结尾淡出
 2. **自由式代码模式 (`create_video_from_code`)**：直接提供 React / Remotion TSX 源码多文件字典，享受 Remotion 4.0.532 最新全生态能力。
+3. **长视频制作与异步任务防超时铁律 (Long Video Async Architecture)**：
+   - 当视频包含多个镜头场景、时长较长（预估渲染时间可能超过网络代理 60s/120s 超时阈值时，如完整政策解读、产品演示、汇报片），**绝对不要因为担心超时而将视频生硬拆碎成 5~6 个 10 秒微型片段**！
+   - 正确解法：使用**异步任务提交 + 轮询**机制：
+     1. 第一步：调用 `submit_video_task_from_spec`（或 `submit_video_task_from_code`），毫秒级立即返回 `task_id`，规避一切 HTTP 请求超时；
+     2. 第二步：告知用户后台正在全力渲染，并间隔 30~60 秒调用 `get_video_task_status(task_id)` 查询任务状态；
+     3. 第三步：当查询到 `status: completed` 时，直接输出视频结果卡片 `user_display_markdown`。
 
 ## 可用规则工具 (Rule Tools)
 可按需调用以下规则获取具体知识：
@@ -27,7 +33,7 @@ RULE_INDEX = """# Remotion Studio MCP — 视频生成与创作指南
 - `rule_shotcraft_cinematic`: 157 张电影感镜头卡配方体系与音效设计美学
 - `get_video_guide`: 全面设计指引（包含 8 大内置主题配色、全平台画幅比例与场景库）
 
-3. **镜头工坊配方库 (Video-Shotcraft Tools)**：
+4. **镜头工坊配方库 (Video-Shotcraft Tools)**：
    - `list_shotcraft_categories`: 查看 10 大镜头分类概览与镜头数量
    - `search_shotcraft_shots`: 按关键词或分类检索 157 张电影感镜头卡
    - `get_shotcraft_recipe`: 深入获取特定镜头的动效核心、缓动参数表、声音规范与已知坑

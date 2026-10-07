@@ -56,6 +56,7 @@ services:
       - ./web_admin.py:/app/web_admin.py                # 单页视频资产管理后台 (SPA)
       - ./config.py:/app/config.py                      # 全局环境变量与配置解析
       - ./store.py:/app/store.py                        # 本地轻量持久化数据存储模块
+      - ./task_manager.py:/app/task_manager.py          # 异步渲染任务管理器与队列
       - ./themes.py:/app/themes.py                      # 8 大主题色彩、平台画幅与模板 Spec
       - ./rules.py:/app/rules.py                        # Remotion 动画规范指南与提示词知识库
       - ./shotcraft_kb.py:/app/shotcraft_kb.py          # 157 镜头配方卡知识库索引器

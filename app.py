@@ -58,6 +58,7 @@ class RenderSpecIn(BaseModel):
     spec: dict = Field(..., description="视频 Spec 结构")
     name: str = ""
     timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
+    is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
 
 
 class RenderCodeIn(BaseModel):
@@ -70,6 +71,7 @@ class RenderCodeIn(BaseModel):
     height: int = 1080
     input_props: dict | None = None
     timeout: int | None = Field(None, description="渲染超时秒数（可选，留空则使用全局 RENDER_TIMEOUT 环境变量）")
+    is_async: bool = Field(False, description="是否异步执行（若为 True 则立即返回 task_id，无需等待渲染完成）")
 
 
 
@@ -436,9 +438,103 @@ def api_get_poster(item_id: str):
 
 # ==================== 渲染 REST 端点 ====================
 
+@app.post("/api/render/spec/async")
+async def api_render_spec_async(payload: RenderSpecIn):
+    """REST API: 异步提交声明式 Spec 渲染任务，毫秒级返回 task_id，规避网络超时。"""
+    task = M.TASKS.create_spec_task(
+        spec=payload.spec,
+        name=payload.name,
+        timeout=payload.timeout,
+        output_dir=M.OUTPUT_DIR,
+        render_fn=render_spec_to_video,
+        register_fn=M.STORE.register,
+        get_base_url_fn=M.get_base_url,
+    )
+    return {
+        "ok": True,
+        "task_id": task["task_id"],
+        "title": task["title"],
+        "status": task["status"],
+        "scenes_count": task["scenes_count"],
+        "estimated_duration_seconds": task["estimated_duration_seconds"],
+        "estimated_render_seconds": task["estimated_render_seconds"],
+        "query_url": f"/api/render/task/{task['task_id']}",
+    }
+
+
+@app.post("/api/render/code/async")
+async def api_render_code_async(payload: RenderCodeIn):
+    """REST API: 异步提交 React 源码渲染任务，毫秒级返回 task_id，规避网络超时。"""
+    task = M.TASKS.create_code_task(
+        files=payload.files,
+        entry_file=payload.entry_file,
+        title=payload.title,
+        duration_in_frames=payload.duration_in_frames,
+        fps=payload.fps,
+        width=payload.width,
+        height=payload.height,
+        input_props=payload.input_props,
+        timeout=payload.timeout,
+        output_dir=M.OUTPUT_DIR,
+        render_fn=render_code_to_video,
+        register_fn=M.STORE.register,
+        get_base_url_fn=M.get_base_url,
+    )
+    return {
+        "ok": True,
+        "task_id": task["task_id"],
+        "title": task["title"],
+        "status": task["status"],
+        "estimated_duration_seconds": task["estimated_duration_seconds"],
+        "estimated_render_seconds": task["estimated_render_seconds"],
+        "query_url": f"/api/render/task/{task['task_id']}",
+    }
+
+
+@app.get("/api/render/task/{task_id}")
+def api_get_render_task(task_id: str):
+    """REST API: 查询异步渲染任务当前状态与渲染结果。"""
+    task = M.TASKS.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task not found: {task_id}")
+
+    status = task.get("status")
+    res = {
+        "ok": True,
+        "task_id": task_id,
+        "title": task.get("title", ""),
+        "mode": task.get("mode", ""),
+        "status": status,
+        "created_at": task.get("created_at"),
+        "started_at": task.get("started_at"),
+        "completed_at": task.get("completed_at"),
+        "elapsed_seconds": task.get("elapsed_seconds", 0.0),
+        "estimated_render_seconds": task.get("estimated_render_seconds", 30.0),
+    }
+
+    if status == "completed":
+        res["result"] = task.get("result")
+        res["render_time_seconds"] = task.get("render_time_seconds", 0.0)
+    elif status == "failed":
+        res["ok"] = False
+        res["error"] = task.get("error")
+
+    return res
+
+
+@app.get("/api/render/tasks")
+def api_list_render_tasks(limit: int = 30):
+    """REST API: 获取最近的后台渲染任务列表。"""
+    tasks = M.TASKS.list_tasks(limit=limit)
+    return {"total": len(tasks), "tasks": tasks}
+
+
 @app.post("/api/render/spec")
 async def api_render_spec(payload: RenderSpecIn):
-    """REST API: 依据声明式 Spec 生成视频。"""
+    """REST API: 依据声明式 Spec 生成视频（支持 is_async 切换同步/异步）。"""
+    if payload.is_async:
+        return await api_render_spec_async(payload)
+
     item_id = M.STORE.new_id("vid_spec")
     title = payload.spec.get("title") or payload.name or "Remotion Video"
 
@@ -484,7 +580,10 @@ async def api_render_spec(payload: RenderSpecIn):
 
 @app.post("/api/render/code")
 async def api_render_code(payload: RenderCodeIn):
-    """REST API: 依据 React 源码多文件字典生成视频。"""
+    """REST API: 依据 React 源码多文件字典生成视频（支持 is_async 切换同步/异步）。"""
+    if payload.is_async:
+        return await api_render_code_async(payload)
+
     item_id = M.STORE.new_id("vid_code")
 
     res = await render_code_to_video(
