@@ -160,6 +160,8 @@ async def cancel_video_task(
     """
     cid = resolve_client_id(client_id)
     res = TASKS.cancel_task(task_id=task_id, reason=reason, client_id=cid)
+    if not res.get("ok") and task_id and not (client_id and client_id.strip()):
+        res = TASKS.cancel_task(task_id=task_id, reason=reason)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
@@ -206,8 +208,8 @@ async def submit_video_task_from_spec(
 
     task_id = task["task_id"]
 
-    # 若指定了就地等待（默认 35 秒，上限 45 秒以适配客户端 HTTP 超时保护）
-    safe_wait = min(max(0.0, wait_seconds), 45.0) if wait_seconds > 0 else 0.0
+    # 若指定了就地等待（默认 35 秒，支持按需传入更长等待）
+    safe_wait = max(0.0, float(wait_seconds))
     if safe_wait > 0:
         finished = await TASKS.wait_for_task(task_id, timeout=safe_wait)
         status = finished.get("status")
@@ -316,7 +318,7 @@ async def submit_video_task_from_code(
 
     task_id = task["task_id"]
 
-    safe_wait = min(max(0.0, wait_seconds), 45.0) if wait_seconds > 0 else 0.0
+    safe_wait = max(0.0, float(wait_seconds))
     if safe_wait > 0:
         finished = await TASKS.wait_for_task(task_id, timeout=safe_wait)
         status = finished.get("status")
