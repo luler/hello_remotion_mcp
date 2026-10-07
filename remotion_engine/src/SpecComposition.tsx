@@ -57,7 +57,7 @@ export const SpecComposition: React.FC<SpecCompositionProps> = ({ spec = {} }) =
   const { fps, width, height } = useVideoConfig();
 
   const theme = getTheme(spec.theme);
-  const scenes = spec.scenes && spec.scenes.length > 0 ? spec.scenes : [
+  const rawScenes = spec.scenes && spec.scenes.length > 0 ? spec.scenes : [
     {
       type: "TitleScene",
       title: spec.title || "Remotion Studio",
@@ -65,6 +65,7 @@ export const SpecComposition: React.FC<SpecCompositionProps> = ({ spec = {} }) =
       duration: 4,
     },
   ];
+  const scenes = rawScenes.map((s) => ({ ...s, ...(s.props || {}) }));
 
   const transType = spec.transition?.type || "fade";
   const transDuration = spec.transition?.durationFrames || 12;
@@ -180,7 +181,7 @@ const SceneWrapper: React.FC<{
   isFirst: boolean;
   isLast: boolean;
 }> = ({
-  scene,
+  scene: rawScene,
   theme,
   durationInFrames,
   transType,
@@ -188,6 +189,7 @@ const SceneWrapper: React.FC<{
   isFirst,
   isLast,
 }) => {
+  const scene = { ...rawScene, ...(rawScene.props || {}) };
   const frame = useCurrentFrame();
 
   // Entrance & exit transition opacity & offset
