@@ -51,6 +51,10 @@ OUTPUT_DIR = config.OUTPUT_DIR
 current_request_base_url: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_request_base_url", default=None
 )
+# 动态保存每次 HTTP 请求传入的真实 Client ID（支持 URL 参数、Header 与 MCP Session 自动注入）
+current_request_client_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_request_client_id", default=None
+)
 
 
 def get_base_url() -> str:
@@ -61,6 +65,14 @@ def get_base_url() -> str:
     if ctx_base:
         return ctx_base.rstrip("/")
     return f"http://127.0.0.1:{config.PORT}"
+
+
+def resolve_client_id(explicit_client_id: str = "") -> str:
+    """自动解析客户端唯一标识：优先使用显式参数，次之继承当前 HTTP 连接/Header 注入的客户端标识。"""
+    if explicit_client_id and explicit_client_id.strip():
+        return explicit_client_id.strip()
+    ctx_cid = current_request_client_id.get() or ""
+    return ctx_cid.strip()
 
 
 _server_kwargs = {
@@ -147,7 +159,8 @@ async def cancel_video_task(
     Returns:
         JSON 格式取消执行结果
     """
-    res = TASKS.cancel_task(task_id=task_id, reason=reason, client_id=client_id)
+    cid = resolve_client_id(client_id)
+    res = TASKS.cancel_task(task_id=task_id, reason=reason, client_id=cid)
     return json.dumps(res, ensure_ascii=False, indent=2)
 
 
@@ -176,12 +189,13 @@ async def submit_video_task_from_spec(
         timeout: 渲染总超时上限（秒）
         client_id: 客户端唯一标识符（用于多客户端独立任务隔离）
     """
+    cid = resolve_client_id(client_id)
     task = TASKS.create_spec_task(
         spec=spec,
         name=name,
         timeout=timeout,
         force=force,
-        client_id=client_id,
+        client_id=cid,
         output_dir=OUTPUT_DIR,
         render_fn=render_spec_to_video,
         register_fn=STORE.register,
@@ -229,7 +243,7 @@ async def submit_video_task_from_spec(
             }, ensure_ascii=False, indent=2)
 
     # 超过 wait_seconds 仍未渲染完（属于长视频），在客户端超时前平滑交还 task_id
-    cur_task = TASKS.get_task(task_id) or task
+    cur_task = TASKS.get_task(task_id, client_id=cid) or task
     elapsed = cur_task.get("elapsed_seconds", 0.0)
     est = cur_task.get("estimated_render_seconds", 60.0)
     return json.dumps({
@@ -278,6 +292,7 @@ async def submit_video_task_from_code(
     if not file_map:
         return json.dumps({"ok": False, "error": "files cannot be empty"})
 
+    cid = resolve_client_id(client_id)
     task = TASKS.create_code_task(
         files=file_map,
         entry_file=entry_file,
@@ -289,7 +304,7 @@ async def submit_video_task_from_code(
         input_props=input_props,
         timeout=timeout,
         force=force,
-        client_id=client_id,
+        client_id=cid,
         output_dir=OUTPUT_DIR,
         render_fn=render_code_to_video,
         register_fn=STORE.register,
@@ -335,7 +350,7 @@ async def submit_video_task_from_code(
                 "error": finished.get("error", "任务已被取消"),
             }, ensure_ascii=False, indent=2)
 
-    cur_task = TASKS.get_task(task_id) or task
+    cur_task = TASKS.get_task(task_id, client_id=cid) or task
     elapsed = cur_task.get("elapsed_seconds", 0.0)
     est = cur_task.get("estimated_render_seconds", 60.0)
     return json.dumps({
@@ -364,12 +379,13 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, 
     Returns:
         JSON 格式任务状态。当 status 为 'completed' 时，包含完整视频 URL、封面图 URL 与 user_display_markdown。
     """
+    cid = resolve_client_id(client_id)
     if not task_id:
-        active = TASKS.get_active_task(client_id=client_id)
+        active = TASKS.get_active_task(client_id=cid)
         if active:
             task_id = active["task_id"]
         else:
-            tasks = TASKS.list_tasks(limit=1, client_id=client_id)
+            tasks = TASKS.list_tasks(limit=1, client_id=cid)
             if not tasks:
                 return json.dumps({"ok": False, "error": "当前没有正在执行或历史的视频渲染任务"}, ensure_ascii=False)
             task_id = tasks[0]["task_id"]
@@ -377,9 +393,13 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, 
     if wait_seconds > 0:
         task = await TASKS.wait_for_task(task_id, timeout=wait_seconds)
     else:
-        task = TASKS.get_task(task_id)
+        task = TASKS.get_task(task_id, client_id=cid)
 
     if not task:
+        return json.dumps({"ok": False, "error": f"Task not found: {task_id}"}, ensure_ascii=False)
+
+    # 跨客户端安全越权检查防御
+    if cid and task.get("client_id") and task.get("client_id") != cid:
         return json.dumps({"ok": False, "error": f"Task not found: {task_id}"}, ensure_ascii=False)
 
     status = task.get("status")
@@ -439,16 +459,21 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, 
 
 @server.tool()
 async def list_video_tasks(limit: int = 5, client_id: str = "") -> str:
-    """获取最近提交的视频渲染任务列表及实时状态（支持多客户端过滤与断线重连）。
+    """获取最近提交的视频渲染任务列表及实时状态（支持严格多客户端隔离与断线重连）。
+
+    本接口具有严格的客户端隔离机制：
+    1. 自动根据 MCP 连接参数、HTTP Header 或显式 client_id 参数进行数据空间隔离；
+    2. 任何客户端均只能查询到自身名下的视频任务，绝不会泄漏或看到其他客户端制作的视频。
 
     Args:
         limit: 返回条数（默认 5）
-        client_id: 客户端唯一标识符（可选）
+        client_id: 客户端唯一标识符（可选，留空时系统自动按当前连接通道/会话自动识别）
 
     Returns:
         JSON 格式任务列表，包含各任务的 task_id、标题、状态(queued/rendering/completed/failed/cancelled)、已耗时、成片链接
     """
-    tasks = TASKS.list_tasks(limit=limit, client_id=client_id)
+    cid = resolve_client_id(client_id)
+    tasks = TASKS.list_tasks(limit=limit, client_id=cid)
     res = []
     for t in tasks:
         item = {

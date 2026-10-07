@@ -130,6 +130,25 @@ class BaseUrlMiddleware:
             if host:
                 M.current_request_base_url.set(f"{proto}://{host}")
 
+            # 自动提取客户端身份标识（支持 ?client_id= / ?cid= 及各类 Client-Id / MCP-Session-Id 请求头）
+            query_str = scope.get("query_string", b"").decode("latin-1")
+            client_id = ""
+            if query_str:
+                qs = parse_qs(query_str)
+                if qs.get("client_id", [None])[0]:
+                    client_id = qs["client_id"][0].strip()
+                elif qs.get("cid", [None])[0]:
+                    client_id = qs["cid"][0].strip()
+
+            if not client_id:
+                for h_name in (b"x-client-id", b"client-id", b"mcp-session-id", b"x-session-id"):
+                    val = headers.get(h_name, b"").decode("latin-1").strip()
+                    if val:
+                        client_id = val
+                        break
+
+            M.current_request_client_id.set(client_id or None)
+
             if config.AUTH_KEY and (path == "/mcp" or path.startswith("/mcp/")):
                 if method != "OPTIONS":
                     auth_header = headers.get(b"authorization", b"").decode("latin-1").strip()
@@ -371,7 +390,7 @@ def api_admin_cleanup(
     registered_files.add(".gitkeep")
 
     # 2. 强保护白名单：正在排队或正在渲染中的任务文件，绝对不可清理！
-    for t in M.TASKS.list_tasks(limit=100):
+    for t in M.TASKS.list_tasks(limit=100, all_clients=True):
         status = t.get("status")
         item_id = t.get("item_id")
         created_at_ts = t.get("created_at_ts", 0)
@@ -671,9 +690,12 @@ async def api_get_render_task(task_id: str, wait_seconds: float = Query(0.0)):
 
 
 @app.get("/api/render/tasks")
-def api_list_render_tasks(limit: int = 30):
-    """REST API: 获取最近的后台渲染任务列表。"""
-    tasks = M.TASKS.list_tasks(limit=limit)
+def api_list_render_tasks(limit: int = 30, client_id: str = Query("", description="可选客户端过滤标识")):
+    """REST API: 获取最近的后台渲染任务列表（管理后台默认查看所有）。"""
+    if client_id:
+        tasks = M.TASKS.list_tasks(limit=limit, client_id=client_id)
+    else:
+        tasks = M.TASKS.list_tasks(limit=limit, all_clients=True)
     return {"total": len(tasks), "tasks": tasks}
 
 

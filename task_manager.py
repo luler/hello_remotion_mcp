@@ -48,11 +48,13 @@ class TaskManager:
     def new_task_id(prefix: str = "task") -> str:
         return f"{prefix}_{time.strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}"
 
-    def get_task(self, task_id: str) -> dict[str, Any] | None:
+    def get_task(self, task_id: str, client_id: str = "") -> dict[str, Any] | None:
         with self._lock:
             task = self._tasks.get(task_id)
             if not task:
                 return None
+            if client_id and task.get("client_id") and task.get("client_id") != client_id:
+                return None  # 跨客户端查询严格隔离
             res = dict(task)
 
         now = time.time()
@@ -63,12 +65,17 @@ class TaskManager:
         return res
 
     def get_active_task(self, client_id: str = "") -> dict[str, Any] | None:
-        """获取当前正在排队或渲染中的活跃任务。支持多客户端隔离（若指定 client_id 则仅匹配该客户端名下的活跃任务）。"""
+        """获取当前正在排队或渲染中的活跃任务。严格支持多客户端隔离。"""
         with self._lock:
             for task in self._tasks.values():
                 if task.get("status") in ("queued", "rendering"):
-                    if client_id and task.get("client_id") and task.get("client_id") != client_id:
-                        continue
+                    task_cid = task.get("client_id", "")
+                    if client_id:
+                        if task_cid != client_id:
+                            continue
+                    else:
+                        if task_cid:
+                            continue
                     res = dict(task)
                     now = time.time()
                     started_at_ts = res.get("started_at_ts") or res.get("created_at_ts", now)
@@ -76,11 +83,15 @@ class TaskManager:
                     return res
         return None
 
-    def list_tasks(self, limit: int = 30, client_id: str = "") -> list[dict[str, Any]]:
+    def list_tasks(self, limit: int = 30, client_id: str = "", all_clients: bool = False) -> list[dict[str, Any]]:
+        """获取任务列表。默认严格按 client_id 隔离，防止不同客户端相互窥探视频资产。"""
         with self._lock:
             items = [dict(t) for t in self._tasks.values()]
-        if client_id:
-            items = [t for t in items if not t.get("client_id") or t.get("client_id") == client_id]
+        if not all_clients:
+            if client_id:
+                items = [t for t in items if t.get("client_id") == client_id]
+            else:
+                items = [t for t in items if not t.get("client_id")]
         items.sort(key=lambda x: x.get("created_at_ts", 0), reverse=True)
         now = time.time()
         for res in items:
@@ -103,6 +114,10 @@ class TaskManager:
             task = self._tasks.get(target_id)
             if not task:
                 return {"ok": False, "error": f"Task not found: {target_id}"}
+
+            # 跨客户端越权取消防御
+            if client_id and task.get("client_id") and task.get("client_id") != client_id:
+                return {"ok": False, "error": f"越权操作拒绝：任务 {target_id} 属于其他客户端，无权取消"}
 
             cur_status = task.get("status")
             if cur_status not in ("queued", "rendering"):
