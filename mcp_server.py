@@ -85,7 +85,7 @@ _server_kwargs = {
         "1. 异步任务模式（制作长视频/多镜头推荐首选，彻底杜绝网络超时与碎片化）：\n"
         "   - 当视频包含 3 个及以上镜头或预计时长较长时，必须优先使用 `submit_video_task_from_spec`（或 `submit_video_task_from_code`）；\n"
         "   - 接口在 50ms 内立即返回唯一任务 ID (`task_id`) 与预估耗时，完全不受客户端/反代 HTTP 60s/120s 超时限制；\n"
-        "   - 提交后若未完成，调用 `get_video_task_status(task_id, wait_seconds=300)` 进行长轮询等待成片就地返回（极大减少 Token 往返消耗）；若客户端偶发网络断开重试，系统会根据上下文中的 task_id 智能无缝找回进度，绝不丢失；\n"
+        "   - 提交后若未完成，调用 `get_video_task_status(task_id, wait_seconds=180)` 进行长轮询等待成片就地返回（安全低于客户端300秒硬超时，极大减少 Token 往返消耗）；若客户端偶发网络断开重试，系统会根据上下文中的 task_id 智能无缝找回进度，绝不丢失；\n"
         "   - 渲染完成后直接获取视频卡片，严禁因为担心超时把一个完整主题拆分成 5~6 个碎片短视频！\n"
         "2. 声明式 Spec 模式 (`create_video_from_spec` / `submit_video_task_from_spec`)：\n"
         "   - 输入 JSON 结构定义即可直接生成高水准商业级动画视频；\n"
@@ -105,7 +105,7 @@ _server_kwargs = {
         "   - 可随时调用 `list_shotcraft_categories`, `search_shotcraft_shots`, `get_shotcraft_recipe` 检索电影感参数与动效拆解。\n\n"
         "【视频制作防超时闭环与任务互斥铁律】\n"
         "1. 智能等待与长轮询（最大化节约 Token）：\n"
-        "   - 提交任务后，客户端使用 `get_video_task_status(task_id, wait_seconds=300)` 进行长轮询等待；\n"
+        "   - 提交任务后，客户端使用 `get_video_task_status(task_id, wait_seconds=180)` 进行长轮询等待（180 秒既安全避开客户端 300 秒硬超时，又能在渲染完成时立即原地出片）；\n"
         "   - 后台渲染完成瞬间会立即在本次调用中返回最终成片卡片，免去多轮无效轮询问答，节约 90% 以上 Token；\n"
         "   - 若因网络闪断或客户端硬超时导致重连，大模型只需凭借上下文中的 `task_id`（或留空自动推断）即可无缝恢复进度查询，绝对不会出现任务丢失或找不到；\n"
         "2. 任务互斥与放弃/取消逻辑（闭环控制）：\n"
@@ -169,7 +169,7 @@ async def cancel_video_task(
 async def submit_video_task_from_spec(
     spec: dict[str, Any],
     name: str = "",
-    wait_seconds: float = 300.0,
+    wait_seconds: float = 180.0,
     force: bool = False,
     timeout: int | None = None,
     client_id: str = "",
@@ -178,12 +178,12 @@ async def submit_video_task_from_spec(
 
     执行机制：
     1. 互斥保护与多客户端隔离：同一客户端若已有任务正在渲染且 force=False，系统会自动拦截并提醒用户；不同客户端（不同 client_id）互不影响；若 force=True 则直接终止旧任务。
-    2. 智能等待与长轮询（默认 300 秒）：在此期间若渲染完成，直接在本次调用中返回最终成片与 Markdown 播放卡片（极大减少大模型往返 Token 消耗）；若超时未完则平滑返回 task_id，由客户端继续查询。
+    2. 智能等待与长轮询（默认 180 秒）：在此期间若渲染完成，直接在本次调用中返回最终成片与 Markdown 播放卡片（极大减少大模型往返 Token 消耗；180 秒设定安全留出 120 秒余量，绝不踩踏客户端 300 秒硬超时）；若超时未完则平滑返回 task_id，由客户端继续查询。
 
     Args:
         spec: 视频规格定义，必须包含 scenes 场景列表
         name: 可选文件名标识，留空则自动生成唯一 ID
-        wait_seconds: 初始长轮询等待秒数（默认 300.0 秒就地等待成片；设为 0 则纯异步秒级返回 task_id）
+        wait_seconds: 初始长轮询等待秒数（默认 180.0 秒就地等待成片；设为 0 则纯异步秒级返回 task_id）
         force: 若当前已有其他任务在渲染，是否强制终止旧任务并开启新任务（默认 False）
         timeout: 渲染总超时上限（秒，默认 1800 秒）
         client_id: 客户端唯一标识符（用于多客户端独立任务隔离）
@@ -206,7 +206,7 @@ async def submit_video_task_from_spec(
 
     task_id = task["task_id"]
 
-    # 若指定了就地等待（默认 35 秒，支持按需传入更长等待）
+    # 若指定了就地等待（默认 180 秒，支持按需传入更长等待）
     safe_wait = max(0.0, float(wait_seconds))
     if safe_wait > 0:
         finished = await TASKS.wait_for_task(task_id, timeout=safe_wait)
@@ -257,7 +257,7 @@ async def submit_video_task_from_spec(
         "estimated_render_seconds": est,
         "message": (
             f"视频正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
-            f"为最大化节省大模型 Token 消耗，请稍候约 300 秒（5分钟）后再调用 get_video_task_status(task_id, wait_seconds=300) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
+            f"为最大化节省大模型 Token 消耗，请稍候约 180 秒（3分钟）后再调用 get_video_task_status(task_id, wait_seconds=180) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
         ),
     }, ensure_ascii=False, indent=2)
 
@@ -272,7 +272,7 @@ async def submit_video_task_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
-    wait_seconds: float = 300.0,
+    wait_seconds: float = 180.0,
     force: bool = False,
     timeout: int | None = None,
     client_id: str = "",
@@ -363,18 +363,18 @@ async def submit_video_task_from_code(
         "estimated_render_seconds": est,
         "message": (
             f"React 源码视频任务正在后台全速渲染中（Task ID: {task_id}，已执行 {elapsed}s / 预估约 {est}s）。"
-            f"为最大化节省大模型 Token 消耗，请稍候约 300 秒（5分钟）后再调用 get_video_task_status(task_id, wait_seconds=300) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
+            f"为最大化节省大模型 Token 消耗，请稍候约 180 秒（3分钟）后再调用 get_video_task_status(task_id, wait_seconds=180) 查询一次（长等待期间若渲染完成会立即返回成片，请勿频繁轮询）；或直接告知用户正在后台渲染，等待用户再次提问时查询。"
         ),
     }, ensure_ascii=False, indent=2)
 
 
 @server.tool()
-async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, client_id: str = "") -> str:
+async def get_video_task_status(task_id: str = "", wait_seconds: float = 180.0, client_id: str = "") -> str:
     """根据任务 ID 查询视频渲染进度与最终生成结果。若留空 task_id 则自动从上下文推断最新任务。
 
     Args:
         task_id: 提交任务时返回的 task_id (如 task_spec_...)，留空则自动从会话上下文中匹配最新活跃任务
-        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型往返轮询产生的 Token 消耗；即便客户端发生网络超时重试，系统亦能通过上下文精准识别原任务）
+        wait_seconds: 长轮询等待秒数（默认 180 秒，安全留出 120 秒余量，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型往返轮询产生的 Token 消耗；即便客户端发生网络超时重试，系统亦能通过上下文精准识别原任务）
         client_id: 客户端唯一标识符（可选，用于多客户端环境精准识别）
 
     Returns:
@@ -463,7 +463,7 @@ async def get_video_task_status(task_id: str = "", wait_seconds: float = 300.0, 
             "estimated_render_seconds": est,
             "message": (
                 f"任务正在后台全速渲染中 (已耗时 {elapsed}s / 预估约 {est}s，进度约 {pct}%)。"
-                f"为节约大模型 Token 消耗，请至少间隔约 300 秒（5分钟）后再调用 get_video_task_status 查询，期间切勿高频调用；"
+                f"为节约大模型 Token 消耗，请至少间隔约 180 秒（3分钟）后再调用 get_video_task_status 查询，期间切勿高频调用；"
                 f"或直接向用户汇报当前进度后，等待用户下一次主动提问时再查。"
             ),
         }, ensure_ascii=False, indent=2)
@@ -517,7 +517,7 @@ async def list_video_tasks(limit: int = 5, client_id: str = "") -> str:
 async def create_video_from_spec(
     spec: dict[str, Any],
     name: str = "",
-    wait_seconds: float = 300.0,
+    wait_seconds: float = 180.0,
     client_id: str = "",
 ) -> str:
     """依据声明式 JSON Spec 一键构建并渲染视频（支持就地返回成片与后台长轮询，最大支持渲染 30 分钟）。
@@ -525,7 +525,7 @@ async def create_video_from_spec(
     Args:
         spec: 视频规格定义，必须包含 scenes 场景列表
         name: 可选文件名标识，留空则自动生成唯一 ID
-        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型 Token 消耗）
+        wait_seconds: 长轮询等待秒数（默认 180 秒，安全留出 120 秒余量，在此期间一旦渲染完成会立即就地返回成片，极大减少大模型 Token 消耗）
         client_id: 客户端唯一标识符（可选，用于多客户端环境隔离）
 
     Returns:
@@ -550,7 +550,7 @@ async def create_video_from_code(
     width: int = 1920,
     height: int = 1080,
     input_props: dict[str, Any] | None = None,
-    wait_seconds: float = 300.0,
+    wait_seconds: float = 180.0,
     client_id: str = "",
 ) -> str:
     """使用原生 React / Remotion 源码多文件字典构建并渲染视频（支持就地返回成片与后台长轮询，最大支持渲染 30 分钟）。
@@ -564,7 +564,7 @@ async def create_video_from_code(
         width: 视频宽度像素（默认 1920）
         height: 视频高度像素（默认 1080）
         input_props: 传入组件的自定义属性字典（可选）
-        wait_seconds: 长轮询等待秒数（默认 300 秒，在此期间渲染完成立即就地返回成片）
+        wait_seconds: 长轮询等待秒数（默认 180 秒，安全留出 120 秒余量，在此期间渲染完成立即就地返回成片）
         client_id: 客户端唯一标识符（可选，用于多客户端环境隔离）
 
     Returns:

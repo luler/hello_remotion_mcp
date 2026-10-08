@@ -19,7 +19,7 @@ class TaskManager:
         self.store_dir = os.path.abspath(store_dir)
         os.makedirs(self.store_dir, exist_ok=True)
         self.tasks_file = os.path.join(self.store_dir, "tasks.json")
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._tasks: dict[str, dict[str, Any]] = {}
         self._async_tasks: dict[str, asyncio.Task] = {}
         self._load()
@@ -33,6 +33,20 @@ class TaskManager:
                 except Exception as e:
                     logger.warning(f"Failed to load tasks.json: {e}")
                     self._tasks = {}
+
+            # 清理历史孤儿任务：服务重启后，旧进程的 queued 或 rendering 任务已不复存在，自动标记为已终止，杜绝假冲突
+            dirty = False
+            now = time.time()
+            now_str = time.strftime("%Y-%m-%d %H:%M:%S")
+            for task in self._tasks.values():
+                if task.get("status") in ("queued", "rendering"):
+                    task["status"] = "failed"
+                    task["error"] = "服务重启或中断，前次未完成的渲染任务已自动终止释放"
+                    task["completed_at"] = now_str
+                    task["completed_at_ts"] = now
+                    dirty = True
+            if dirty:
+                self._save()
 
     def _save(self) -> None:
         with self._lock:
@@ -65,9 +79,11 @@ class TaskManager:
         return res
 
     def get_active_task(self, client_id: str = "") -> dict[str, Any] | None:
-        """获取当前正在排队或渲染中的活跃任务。严格支持多客户端隔离。"""
+        """获取当前正在排队或渲染中的活跃任务。严格支持多客户端隔离与超时自动恢复。"""
+        now = time.time()
+        dirty = False
         with self._lock:
-            for task in self._tasks.values():
+            for tid, task in list(self._tasks.items()):
                 if task.get("status") in ("queued", "rendering"):
                     task_cid = task.get("client_id", "")
                     if client_id:
@@ -76,11 +92,38 @@ class TaskManager:
                     else:
                         if task_cid:
                             continue
+
+                    started_at_ts = task.get("started_at_ts") or task.get("created_at_ts", now)
+                    elapsed = now - started_at_ts
+                    task_timeout = task.get("timeout") or 1800
+
+                    # 1. 超时僵尸任务自动判定失败释放，绝不永久阻碍新任务提交
+                    if elapsed > task_timeout:
+                        task["status"] = "failed"
+                        task["error"] = f"任务执行超时（已达 {round(elapsed, 1)}s，上限 {task_timeout}s），已自动释放"
+                        task["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                        task["completed_at_ts"] = now
+                        dirty = True
+                        continue
+
+                    # 2. 若后台协程已经结束却未更新状态（异常退出），自动清理释放
+                    async_task = self._async_tasks.get(tid)
+                    if async_task is not None and async_task.done():
+                        task["status"] = "failed"
+                        task["error"] = "后台渲染协程已终止"
+                        task["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                        task["completed_at_ts"] = now
+                        dirty = True
+                        continue
+
                     res = dict(task)
-                    now = time.time()
-                    started_at_ts = res.get("started_at_ts") or res.get("created_at_ts", now)
-                    res["elapsed_seconds"] = round(now - started_at_ts, 1)
+                    res["elapsed_seconds"] = round(elapsed, 1)
+                    if dirty:
+                        self._save()
                     return res
+
+            if dirty:
+                self._save()
         return None
 
     def list_tasks(self, limit: int = 30, client_id: str = "", all_clients: bool = False) -> list[dict[str, Any]]:
